@@ -20,11 +20,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
@@ -55,12 +58,14 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
     var showAdd by remember { mutableStateOf(false) }
+    var editProfile by remember { mutableStateOf<Profile?>(null) }
     var recordDate by remember { mutableStateOf<LocalDate?>(null) }
 
-    Column(
-        Modifier.fillMaxSize().background(OloColors.Background).statusBarsPadding(),
-    ) {
-        Header(state.selected)
+    Column(Modifier.fillMaxSize().background(OloColors.Background)) {
+        BrandHeader(
+            selected = state.selected,
+            onEditSelected = { state.selected?.let { editProfile = it } },
+        )
         ProfileBar(
             profiles = state.profiles,
             selectedId = state.selected?.id,
@@ -76,19 +81,36 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
             enabled = state.selected != null,
             onDayClick = { recordDate = it },
         )
-        Spacer(Modifier.height(12.dp))
+        PhaseLegend()
+        Spacer(Modifier.height(8.dp))
         TodayCard(state.daysUntilNextPeriod, state.prediction?.nextPeriodStart, state.selected)
         Spacer(Modifier.weight(1f))
         DisclaimerBar()
     }
 
     if (showAdd) {
-        AddProfileDialog(
+        ProfileEditorDialog(
+            original = null,
             onDismiss = { showAdd = false },
-            onCreate = { name, color, cycle, period, locked ->
-                vm.addProfile(name, color, cycle, period, locked)
+            onSave = { name, color, cycle, period, birth, locked ->
+                vm.addProfile(name, color, cycle, period, birth, locked)
                 showAdd = false
             },
+            onDelete = null,
+        )
+    }
+
+    editProfile?.let { profile ->
+        ProfileEditorDialog(
+            original = profile,
+            onDismiss = { editProfile = null },
+            onSave = { name, color, cycle, period, birth, locked ->
+                vm.updateProfile(profile, name, color, cycle, period, birth, locked)
+                editProfile = null
+            },
+            onDelete = if (state.profiles.size > 1) {
+                { vm.deleteProfile(profile); editProfile = null }
+            } else null,
         )
     }
 
@@ -108,25 +130,37 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
 }
 
 @Composable
-private fun Header(selected: Profile?) {
-    Column(Modifier.fillMaxWidth().padding(20.dp, 14.dp, 20.dp, 8.dp)) {
-        Text("OLO 사이클", color = OloColors.Primary, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
-        Text(
-            selected?.let { "${it.name} 님의 주기" } ?: "구성원을 추가하세요",
-            color = OloColors.Muted, fontSize = 14.sp,
-        )
+private fun BrandHeader(selected: Profile?, onEditSelected: () -> Unit) {
+    val gradient = Brush.horizontalGradient(listOf(OloColors.Primary, OloColors.Accent))
+    Row(
+        Modifier.fillMaxWidth().background(gradient).statusBarsPadding()
+            .padding(20.dp, 16.dp, 12.dp, 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("OLO 사이클", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                selected?.let { "${it.name} 님의 주기" } ?: "구성원을 추가하세요",
+                color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp,
+            )
+        }
+        if (selected != null) {
+            IconButton(onEditSelected) {
+                Icon(Icons.Default.Edit, "프로필 편집", tint = Color.White)
+            }
+        }
     }
 }
 
 @Composable
 private fun ProfileBar(profiles: List<Profile>, selectedId: Long?, onSelect: (Long) -> Unit, onAdd: () -> Unit) {
     LazyRow(
-        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        Modifier.fillMaxWidth().padding(vertical = 10.dp),
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(profiles, key = { it.id }) { p ->
-            Avatar(p.name.take(1), Color(p.color), selected = p.id == selectedId) { onSelect(p.id) }
+            Avatar(p, selected = p.id == selectedId) { onSelect(p.id) }
         }
         item {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onAdd)) {
@@ -134,7 +168,7 @@ private fun ProfileBar(profiles: List<Profile>, selectedId: Long?, onSelect: (Lo
                     Modifier.size(52.dp).clip(CircleShape).border(2.dp, OloColors.Line, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.Add, "구성원 추가", tint = OloColors.Muted) }
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(5.dp))
                 Text("추가", fontSize = 12.sp, color = OloColors.Muted)
             }
         }
@@ -142,15 +176,45 @@ private fun ProfileBar(profiles: List<Profile>, selectedId: Long?, onSelect: (Lo
 }
 
 @Composable
-private fun Avatar(initial: String, color: Color, selected: Boolean, onClick: () -> Unit) {
+private fun Avatar(profile: Profile, selected: Boolean, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
-        Box(
-            Modifier.size(52.dp).clip(CircleShape).background(color)
-                .then(if (selected) Modifier.border(3.dp, OloColors.Primary, CircleShape) else Modifier),
-            contentAlignment = Alignment.Center,
-        ) { Text(initial, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-        Spacer(Modifier.height(4.dp))
-        Text(initial, fontSize = 12.sp, color = OloColors.Ink)
+        Box(contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(52.dp).clip(CircleShape).background(Color(profile.color))
+                    .then(if (selected) Modifier.border(3.dp, OloColors.Primary, CircleShape) else Modifier),
+                contentAlignment = Alignment.Center,
+            ) { Text(profile.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+            if (profile.locked) {
+                Box(
+                    Modifier.align(Alignment.BottomEnd).size(18.dp).clip(CircleShape)
+                        .background(OloColors.Surface).border(1.dp, OloColors.Line, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Default.Lock, "잠김", tint = OloColors.Muted, modifier = Modifier.size(11.dp)) }
+            }
+        }
+        Spacer(Modifier.height(5.dp))
+        Text(profile.name, fontSize = 12.sp, color = if (selected) OloColors.Primary else OloColors.Ink,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+@Composable
+private fun PhaseLegend() {
+    val items = listOf(
+        "생리" to OloColors.Period, "가임기" to OloColors.Fertile,
+        "배란" to OloColors.Ovulation, "PMS" to OloColors.Pms,
+    )
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        items.forEach { (label, color) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(11.dp).clip(RoundedCornerShape(3.dp)).background(color))
+                Spacer(Modifier.width(5.dp))
+                Text(label, fontSize = 12.sp, color = OloColors.Muted)
+            }
+        }
     }
 }
 
@@ -274,25 +338,40 @@ private fun DisclaimerBar() {
     )
 }
 
+/**
+ * Add or edit a member profile. [original] null means "add"; otherwise the fields prefill from it.
+ * [onDelete] is shown only when deleting is allowed (never for the last remaining profile).
+ */
 @Composable
-private fun AddProfileDialog(onDismiss: () -> Unit, onCreate: (String, Int, Int, Int, Boolean) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var colorIndex by remember { mutableStateOf(0) }
-    var cycle by remember { mutableStateOf(28) }
-    var period by remember { mutableStateOf(5) }
-    var locked by remember { mutableStateOf(false) }
+private fun ProfileEditorDialog(
+    original: Profile?,
+    onDismiss: () -> Unit,
+    onSave: (name: String, color: Int, cycle: Int, period: Int, birthControl: Boolean, locked: Boolean) -> Unit,
+    onDelete: (() -> Unit)?,
+) {
+    var name by remember { mutableStateOf(original?.name ?: "") }
+    var colorIndex by remember {
+        mutableStateOf(
+            original?.let { p -> OloColors.ProfilePalette.indexOfFirst { it.toArgb() == p.color }.coerceAtLeast(0) } ?: 0,
+        )
+    }
+    var cycle by remember { mutableStateOf(original?.defaultCycleLength ?: 28) }
+    var period by remember { mutableStateOf(original?.defaultPeriodLength ?: 5) }
+    var birthControl by remember { mutableStateOf(original?.onBirthControl ?: false) }
+    var locked by remember { mutableStateOf(original?.locked ?: false) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = {
-                onCreate(name, OloColors.ProfilePalette[colorIndex].toArgb(), cycle, period, locked)
-            }) { Text("만들기") }
+                onSave(name, OloColors.ProfilePalette[colorIndex].toArgb(), cycle, period, birthControl, locked)
+            }) { Text(if (original == null) "만들기" else "저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
-        title = { Text("구성원 추가") },
+        title = { Text(if (original == null) "구성원 추가" else "프로필 편집") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(name, { name = it }, label = { Text("이름(별명)") }, singleLine = true)
                 Spacer(Modifier.height(12.dp))
                 Text("프로필 색상", fontSize = 12.sp, color = OloColors.Muted)
@@ -309,8 +388,26 @@ private fun AddProfileDialog(onDismiss: () -> Unit, onCreate: (String, Int, Int,
                 Stepper("평균 주기(일)", cycle, 15, 60) { cycle = it }
                 Stepper("평균 생리 기간(일)", period, 1, 10) { period = it }
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("피임약 복용", Modifier.weight(1f), fontSize = 13.sp)
+                    Switch(birthControl, { birthControl = it })
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("프로필 잠금(생체인증/PIN)", Modifier.weight(1f), fontSize = 13.sp)
                     Switch(locked, { locked = it })
+                }
+                if (onDelete != null) {
+                    Spacer(Modifier.height(8.dp))
+                    if (!confirmDelete) {
+                        TextButton(onClick = { confirmDelete = true }) {
+                            Text("이 프로필 삭제", color = OloColors.Period)
+                        }
+                    } else {
+                        Text("이 구성원의 모든 기록이 함께 삭제됩니다.", color = OloColors.Period, fontSize = 12.sp)
+                        Row {
+                            TextButton(onClick = onDelete) { Text("삭제 확인", color = OloColors.Period) }
+                            TextButton(onClick = { confirmDelete = false }) { Text("취소") }
+                        }
+                    }
                 }
             }
         },

@@ -148,7 +148,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addProfile(name: String, color: Int, cycleLength: Int, periodLength: Int, locked: Boolean) {
+    fun addProfile(
+        name: String, color: Int, cycleLength: Int, periodLength: Int,
+        onBirthControl: Boolean, locked: Boolean,
+    ) {
         viewModelScope.launch {
             val order = state.value.profiles.size
             val id = db.profileDao().insert(
@@ -157,11 +160,41 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     color = color,
                     defaultCycleLength = cycleLength,
                     defaultPeriodLength = periodLength,
+                    onBirthControl = onBirthControl,
                     locked = locked,
                     sortOrder = order,
                 ),
             )
             selectedId.value = id
+        }
+    }
+
+    /** Saves edits to an existing profile, keeping its id and sort order. */
+    fun updateProfile(
+        original: Profile, name: String, color: Int, cycleLength: Int, periodLength: Int,
+        onBirthControl: Boolean, locked: Boolean,
+    ) {
+        viewModelScope.launch {
+            db.profileDao().upsert(
+                original.copy(
+                    name = name.ifBlank { original.name },
+                    color = color,
+                    defaultCycleLength = cycleLength,
+                    defaultPeriodLength = periodLength,
+                    onBirthControl = onBirthControl,
+                    locked = locked,
+                ),
+            )
+        }
+    }
+
+    /** Deletes a profile and (via foreign keys) all of its records. */
+    fun deleteProfile(profile: Profile) {
+        viewModelScope.launch {
+            db.profileDao().delete(profile)
+            if (selectedId.value == profile.id) {
+                selectedId.value = state.value.profiles.firstOrNull { it.id != profile.id }?.id
+            }
         }
     }
 
