@@ -13,6 +13,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -53,9 +55,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -77,6 +81,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -125,18 +130,9 @@ private fun App(vm: HomeViewModel = viewModel()) {
     var authInProgress by remember { mutableStateOf(false) }
     val gated = appLockEnabled && !authed
 
-    // 앱이 화면에서 사라지면(ON_STOP) 다시 잠금. 인증창(기기 잠금)으로 잠깐 나간 경우는 제외.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val obs = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && !authInProgress) authed = false
-        }
-        lifecycleOwner.lifecycle.addObserver(obs)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
-    }
-
     val requestUnlock: () -> Unit = req@{
         val act = activity ?: return@req
+        if (authInProgress) return@req
         authInProgress = true
         BiometricAuth.authenticate(
             act, title = "OLO Cycle 잠금 해제", subtitle = "생체인증 또는 화면 잠금으로 확인",
@@ -144,8 +140,23 @@ private fun App(vm: HomeViewModel = viewModel()) {
             onError = { msg -> authInProgress = false; Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() },
         )
     }
-    // 잠금 상태가 되면(첫 구동·복귀) 인증창을 자동으로 띄운다. 취소하면 잠금 화면의 버튼으로 다시 시도.
-    LaunchedEffect(gated) { if (gated) requestUnlock() }
+
+    // 화면에서 사라지면(ON_STOP) 다시 잠그고, 앱이 실제로 앞으로 돌아왔을 때(ON_RESUME) 인증창을 자동으로 띄운다.
+    // (백그라운드에서 띄우면 인증창이 뜨지 못해 수동 버튼만 남던 문제를 고침.)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            when (event) {
+                // 회전 등 구성 변경으로 인한 정지는 재잠금에서 제외(진짜 백그라운드로 나갈 때만 잠근다).
+                Lifecycle.Event.ON_STOP ->
+                    if (!authInProgress && activity?.isChangingConfigurations != true) authed = false
+                Lifecycle.Event.ON_RESUME -> if (appLockEnabled && !authed && !authInProgress) requestUnlock()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
 
     if (gated) {
         AppLockGate(onUnlock = requestUnlock)
@@ -162,6 +173,24 @@ private fun App(vm: HomeViewModel = viewModel()) {
         val idx = list.indexOfFirst { it.id == state.selected?.id }.takeIf { it >= 0 } ?: return@step
         val next = (idx + dir).coerceIn(0, list.size - 1)
         if (next != idx) vm.select(list[next].id)
+    }
+
+    // 구성원이 바뀌면 콘텐츠를 이동 방향에서 슬라이드+페이드로 부드럽게 들어오게 한다(즉시 교체 방지).
+    val density = LocalDensity.current
+    val selId = state.selected?.id
+    val contentOffset = remember { Animatable(0f) }
+    val contentAlpha = remember { Animatable(1f) }
+    var lastIndex by remember { mutableStateOf(-1) }
+    LaunchedEffect(selId) {
+        val curIndex = state.profiles.indexOfFirst { it.id == selId }
+        if (lastIndex >= 0 && curIndex >= 0 && curIndex != lastIndex) {
+            val dir = if (curIndex > lastIndex) 1 else -1
+            contentOffset.snapTo(with(density) { 48.dp.toPx() } * dir)
+            contentAlpha.snapTo(0.2f)
+            launch { contentAlpha.animateTo(1f, tween(300)) }
+            contentOffset.animateTo(0f, tween(300))
+        }
+        lastIndex = curIndex
     }
 
     Column(Modifier.fillMaxSize().background(OloColors.Background)) {
@@ -185,25 +214,27 @@ private fun App(vm: HomeViewModel = viewModel()) {
                 ) { change, dragAmount -> total += dragAmount; change.consume() }
             },
         ) {
-            when (tab) {
-                Tab.HOME -> HomeTab(state, profileColor, visibleMonth,
-                    onPrevMonth = { visibleMonth = visibleMonth.minusMonths(1) },
-                    onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
-                    onDayClick = { recordDate = it },
-                    onLogToday = { recordDate = state.today })
-                Tab.RECORD -> RecordTab(state, onSelectMember = vm::select) { recordDate = it }
-                Tab.STATS -> StatsTab(state, profileColor, onSelectMember = vm::select)
-                Tab.SETTINGS -> SettingsTab(state,
-                    appLockEnabled = appLockEnabled,
-                    onToggleAppLock = { on ->
-                        if (on && !BiometricAuth.canAuthenticate(context)) {
-                            Toast.makeText(context, "기기 화면 잠금(생체/PIN)을 먼저 설정해 주세요.", Toast.LENGTH_LONG).show()
-                        } else {
-                            vm.setAppLock(on)
-                            if (on) authed = true // 방금 켠 사람은 이번 세션은 계속 열어 둔다(다음 복귀부터 잠김).
-                        }
-                    },
-                    onAbout = { showAbout = true })
+            Box(Modifier.fillMaxSize().graphicsLayer { translationX = contentOffset.value; alpha = contentAlpha.value }) {
+                when (tab) {
+                    Tab.HOME -> HomeTab(state, profileColor, visibleMonth,
+                        onPrevMonth = { visibleMonth = visibleMonth.minusMonths(1) },
+                        onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
+                        onDayClick = { recordDate = it },
+                        onLogToday = { recordDate = state.today })
+                    Tab.RECORD -> RecordTab(state, onSelectMember = vm::select) { recordDate = it }
+                    Tab.STATS -> StatsTab(state, profileColor, onSelectMember = vm::select)
+                    Tab.SETTINGS -> SettingsTab(state,
+                        appLockEnabled = appLockEnabled,
+                        onToggleAppLock = { on ->
+                            if (on && !BiometricAuth.canAuthenticate(context)) {
+                                Toast.makeText(context, "기기 화면 잠금(생체/PIN)을 먼저 설정해 주세요.", Toast.LENGTH_LONG).show()
+                            } else {
+                                vm.setAppLock(on)
+                                if (on) authed = true // 방금 켠 사람은 이번 세션은 계속 열어 둔다(다음 복귀부터 잠김).
+                            }
+                        },
+                        onAbout = { showAbout = true })
+                }
             }
         }
         BottomNav(tab) { tab = it }
