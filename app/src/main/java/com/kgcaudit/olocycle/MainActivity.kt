@@ -2,7 +2,9 @@ package com.kgcaudit.olocycle
 
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -13,6 +15,8 @@ import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -50,6 +54,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -77,7 +82,21 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        hideFromRecents()
         setContent { OloTheme { App() } }
+    }
+
+    /**
+     * 최근 앱(작업 전환) 화면 미리보기에 생리 기록 내용이 남지 않게 가린다.
+     * API 33+ 는 미리보기만 끄고 사용자의 직접 스크린샷은 그대로 허용(setRecentsScreenshotEnabled),
+     * 그 이하는 FLAG_SECURE 로 미리보기·캡처를 함께 차단한다.
+     */
+    private fun hideFromRecents() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            setRecentsScreenshotEnabled(false)
+        } else {
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
 }
 
@@ -136,6 +155,15 @@ private fun App(vm: HomeViewModel = viewModel()) {
     // 화면 강조(버튼 등)는 클레이(역할색). 링·달력은 프로필 색(정체성)으로 물들여 "누구 달력"인지 보이게 한다.
     val profileColor = state.selected?.let { Color(it.color) } ?: OloColors.Primary
 
+    // 좌우 스와이프로 구성원 이동: 왼쪽으로 밀면 다음, 오른쪽으로 밀면 이전 구성원.
+    val switchMember: (Int) -> Unit = step@{ dir ->
+        val list = state.profiles
+        if (list.size < 2) return@step
+        val idx = list.indexOfFirst { it.id == state.selected?.id }.takeIf { it >= 0 } ?: return@step
+        val next = (idx + dir).coerceIn(0, list.size - 1)
+        if (next != idx) vm.select(list[next].id)
+    }
+
     Column(Modifier.fillMaxSize().background(OloColors.Background)) {
         HeaderBar(
             profiles = state.profiles,
@@ -144,15 +172,27 @@ private fun App(vm: HomeViewModel = viewModel()) {
             onAdd = { showAdd = true },
             onEdit = { state.selected?.let { editProfile = it } },
         )
-        Box(Modifier.weight(1f)) {
+        Box(
+            Modifier.weight(1f).pointerInput(state.profiles, state.selected?.id) {
+                val threshold = 56.dp.toPx()
+                var total = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { total = 0f },
+                    onDragEnd = {
+                        if (total <= -threshold) switchMember(+1)      // ← 다음 구성원
+                        else if (total >= threshold) switchMember(-1)  // → 이전 구성원
+                    },
+                ) { change, dragAmount -> total += dragAmount; change.consume() }
+            },
+        ) {
             when (tab) {
                 Tab.HOME -> HomeTab(state, profileColor, visibleMonth,
                     onPrevMonth = { visibleMonth = visibleMonth.minusMonths(1) },
                     onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
                     onDayClick = { recordDate = it },
                     onLogToday = { recordDate = state.today })
-                Tab.RECORD -> RecordTab(state) { recordDate = it }
-                Tab.STATS -> StatsTab(state, profileColor)
+                Tab.RECORD -> RecordTab(state, onSelectMember = vm::select) { recordDate = it }
+                Tab.STATS -> StatsTab(state, profileColor, onSelectMember = vm::select)
                 Tab.SETTINGS -> SettingsTab(state,
                     appLockEnabled = appLockEnabled,
                     onToggleAppLock = { on ->
@@ -163,7 +203,6 @@ private fun App(vm: HomeViewModel = viewModel()) {
                             if (on) authed = true // 방금 켠 사람은 이번 세션은 계속 열어 둔다(다음 복귀부터 잠김).
                         }
                     },
-                    onEditProfile = { editProfile = it },
                     onAbout = { showAbout = true })
             }
         }
@@ -542,26 +581,62 @@ private fun PhaseLegend() {
 // ---------------------------------------------------------------------------- record tab
 
 @Composable
-private fun RecordTab(state: HomeState, onOpen: (LocalDate) -> Unit) {
+private fun RecordTab(state: HomeState, onSelectMember: (Long) -> Unit, onOpen: (LocalDate) -> Unit) {
     val days = state.loggedDays()
     Column(Modifier.fillMaxSize()) {
         SectionTitle("기록", "${state.selected?.name ?: ""} · ${days.size}일 기록됨")
-        if (days.isEmpty()) {
-            EmptyHint("홈의 ‘오늘 기록’이나 달력 날짜를 눌러 기록을 남겨 보세요.")
-        } else {
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(days.size) { i ->
-                    val rec = days[i]
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onOpen(rec.date) }.padding(18.dp, 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column {
-                            Text("${rec.date.monthValue}월 ${rec.date.dayOfMonth}일", fontWeight = FontWeight.Bold, color = OloColors.Ink)
-                            Text(recordSummary(rec), color = OloColors.Muted, fontSize = 13.sp)
+        Box(Modifier.weight(1f)) {
+            if (days.isEmpty()) {
+                EmptyHint("홈의 ‘오늘 기록’이나 달력 날짜를 눌러 기록을 남겨 보세요.")
+            } else {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(days.size) { i ->
+                        val rec = days[i]
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onOpen(rec.date) }.padding(18.dp, 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column {
+                                Text("${rec.date.monthValue}월 ${rec.date.dayOfMonth}일", fontWeight = FontWeight.Bold, color = OloColors.Ink)
+                                Text(recordSummary(rec), color = OloColors.Muted, fontSize = 13.sp)
+                            }
                         }
+                        HorizontalDivider(color = OloColors.Line)
                     }
-                    HorizontalDivider(color = OloColors.Line)
+                }
+            }
+        }
+        MemberStrip(state.profiles, state.selected?.id, onSelectMember)
+    }
+}
+
+/**
+ * 하단 구성원 바: 모든 구성원을 사진·색·이름으로 구분해 나열하고, 눌러서 그 구성원의 기록/통계로 전환.
+ * 지금 보고 있는 구성원은 강조(테두리·연한 배경). 구성원이 1명이면 감춘다.
+ */
+@Composable
+private fun MemberStrip(profiles: List<Profile>, selectedId: Long?, onSelect: (Long) -> Unit) {
+    if (profiles.size < 2) return
+    Column {
+        HorizontalDivider(color = OloColors.Line)
+        Row(
+            Modifier.fillMaxWidth().background(OloColors.Surface).horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            profiles.forEach { p ->
+                val on = p.id == selectedId
+                Row(
+                    Modifier.clip(RoundedCornerShape(20.dp))
+                        .background(if (on) OloColors.AccentContainer else OloColors.SurfaceSoft)
+                        .clickable { onSelect(p.id) }.padding(6.dp, 5.dp, 12.dp, 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ProfileAvatar(p, size = 26.dp)
+                    Spacer(Modifier.width(7.dp))
+                    Text(p.name, fontSize = 13.sp, color = if (on) OloColors.OnAccentContainer else OloColors.Ink,
+                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
                 }
             }
         }
@@ -582,8 +657,9 @@ private fun recordSummary(rec: com.kgcaudit.olocycle.data.DayRecord): String {
 // ---------------------------------------------------------------------------- stats tab
 
 @Composable
-private fun StatsTab(state: HomeState, profileColor: Color) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+private fun StatsTab(state: HomeState, profileColor: Color, onSelectMember: (Long) -> Unit) {
+  Column(Modifier.fillMaxSize()) {
+    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
         SectionTitle("통계", state.selected?.name?.let { "$it · 최근 주기 분석" } ?: "")
         val cycle = state.params?.cycleLength
         val period = state.params?.periodLength
@@ -628,6 +704,8 @@ private fun StatsTab(state: HomeState, profileColor: Color) {
             }
         }
     }
+    MemberStrip(state.profiles, state.selected?.id, onSelectMember)
+  }
 }
 
 @Composable
@@ -646,10 +724,9 @@ private fun SettingsTab(
     state: HomeState,
     appLockEnabled: Boolean,
     onToggleAppLock: (Boolean) -> Unit,
-    onEditProfile: (Profile) -> Unit,
     onAbout: () -> Unit,
 ) {
-    // 설정에는 앱 전체 공통 항목만 둔다. 이름·색·사진·주기 같은 개인별 설정은 각 프로필(편집창)에 있다.
+    // 설정에는 앱 전체 공통 항목만 둔다. 구성원 추가·수정은 상단 헤더(＋·연필), 이동은 좌우 스와이프/하단 바로 한다.
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SectionTitle("설정 · 개인정보", "앱 전체 공통 항목")
         // 프라이버시 안내를 최상단에.
@@ -671,17 +748,8 @@ private fun SettingsTab(
             Switch(appLockEnabled, onToggleAppLock)
         }
         HorizontalDivider(color = OloColors.Line)
-        SettingRow("구성원 관리") {}
-        Text("이름·사진·색상·주기는 각 구성원을 눌러 프로필에서 설정합니다.",
-            Modifier.padding(24.dp, 0.dp, 24.dp, 6.dp), color = OloColors.Muted, fontSize = 12.sp)
-        state.profiles.forEach { p ->
-            Row(Modifier.fillMaxWidth().clickable { onEditProfile(p) }.padding(24.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                ProfileAvatar(p, size = 32.dp)
-                Spacer(Modifier.width(12.dp))
-                Text(p.name, Modifier.weight(1f), color = OloColors.Ink)
-                Icon(Icons.Default.ChevronRight, "편집", tint = OloColors.Muted)
-            }
-        }
+        Text("구성원 추가는 상단 ＋, 이름·사진·색상·주기 수정은 상단 연필(현재 구성원)에서 합니다. 구성원 이동은 화면을 좌우로 밀거나 기록·통계 하단 바를 누르세요.",
+            Modifier.padding(20.dp, 12.dp), color = OloColors.Muted, fontSize = 12.sp, lineHeight = 18.sp)
         HorizontalDivider(color = OloColors.Line)
         SettingRow("앱 정보 · 오픈소스 고지", onClick = onAbout)
     }
