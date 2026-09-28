@@ -18,6 +18,8 @@ data class Profile(
     val onBirthControl: Boolean = false,
     /** Requires biometric/PIN before this profile's data is shown. */
     val locked: Boolean = false,
+    /** Absolute path to a photo copied into app-internal storage, or null for the colour+initial avatar. */
+    val photoPath: String? = null,
     val sortOrder: Int = 0,
 )
 

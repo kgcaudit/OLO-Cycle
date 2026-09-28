@@ -11,6 +11,7 @@ import com.kgcaudit.olocycle.data.DayRecord
 import com.kgcaudit.olocycle.data.OloDatabase
 import com.kgcaudit.olocycle.data.PeriodStart
 import com.kgcaudit.olocycle.data.Profile
+import com.kgcaudit.olocycle.data.ProfilePhotos
 import androidx.compose.ui.graphics.toArgb
 import com.kgcaudit.olocycle.ui.theme.OloColors
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -70,6 +71,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val db = OloDatabase.get(app)
     private val selectedId = MutableStateFlow<Long?>(null)
+
+    /** The picked id, exposed so the UI can gate a locked profile instantly — before its (slower) data loads. */
+    val selectedProfileId: StateFlow<Long?> = selectedId
 
     /** Ids unlocked this session; a locked profile stays gated until it appears here. */
     private val _unlocked = MutableStateFlow<Set<Long>>(emptySet())
@@ -178,7 +182,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addProfile(
         name: String, color: Int, cycleLength: Int, periodLength: Int,
-        onBirthControl: Boolean, locked: Boolean,
+        onBirthControl: Boolean, locked: Boolean, photoPath: String?,
     ) {
         viewModelScope.launch {
             val order = state.value.profiles.size
@@ -190,6 +194,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     defaultPeriodLength = periodLength,
                     onBirthControl = onBirthControl,
                     locked = locked,
+                    photoPath = photoPath,
                     sortOrder = order,
                 ),
             )
@@ -200,9 +205,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** Saves edits to an existing profile, keeping its id and sort order. */
     fun updateProfile(
         original: Profile, name: String, color: Int, cycleLength: Int, periodLength: Int,
-        onBirthControl: Boolean, locked: Boolean,
+        onBirthControl: Boolean, locked: Boolean, photoPath: String?,
     ) {
         viewModelScope.launch {
+            // 사진을 새로 골랐거나 지웠으면, 더 이상 안 쓰는 예전 파일을 정리한다.
+            if (original.photoPath != null && original.photoPath != photoPath) {
+                ProfilePhotos.delete(original.photoPath)
+            }
             db.profileDao().upsert(
                 original.copy(
                     name = name.ifBlank { original.name },
@@ -211,6 +220,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     defaultPeriodLength = periodLength,
                     onBirthControl = onBirthControl,
                     locked = locked,
+                    photoPath = photoPath,
                 ),
             )
         }
@@ -220,6 +230,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteProfile(profile: Profile) {
         viewModelScope.launch {
             db.profileDao().delete(profile)
+            ProfilePhotos.delete(profile.photoPath) // 사진 파일도 함께 정리한다.
             if (selectedId.value == profile.id) {
                 selectedId.value = state.value.profiles.firstOrNull { it.id != profile.id }?.id
             }

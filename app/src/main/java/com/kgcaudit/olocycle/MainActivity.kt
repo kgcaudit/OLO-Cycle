@@ -1,11 +1,17 @@
 package com.kgcaudit.olocycle
 
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,12 +44,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,6 +61,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kgcaudit.olocycle.auth.BiometricAuth
 import com.kgcaudit.olocycle.cycle.Phase
 import com.kgcaudit.olocycle.data.Profile
+import com.kgcaudit.olocycle.data.ProfilePhotos
 import com.kgcaudit.olocycle.ui.theme.OloColors
 import com.kgcaudit.olocycle.ui.theme.OloTheme
 import java.time.LocalDate
@@ -77,6 +88,8 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 private fun App(vm: HomeViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val unlocked by vm.unlocked.collectAsStateWithLifecycle()
+    // 잠금 판정은 (느린) 프로필 데이터 로드가 아니라 즉시 갱신되는 선택 id로 한다 → 잠긴 프로필이 잠깐 보이는 깜빡임 방지.
+    val selId by vm.selectedProfileId.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as? FragmentActivity
     var tab by remember { mutableStateOf(Tab.HOME) }
@@ -86,26 +99,27 @@ private fun App(vm: HomeViewModel = viewModel()) {
     var recordDate by remember { mutableStateOf<LocalDate?>(null) }
     var showAbout by remember { mutableStateOf(false) }
 
+    // 잠금 대상 프로필: 선택 id로 프로필 목록에서 바로 찾는다(데이터 로드를 기다리지 않음).
+    val gateProfile = state.profiles.firstOrNull { it.id == selId } ?: state.profiles.firstOrNull()
+    val gated = gateProfile != null && gateProfile.locked && gateProfile.id !in unlocked
     // 화면 강조(버튼 등)는 클레이(역할색). 링·달력은 프로필 색(정체성)으로 물들여 "누구 달력"인지 보이게 한다.
-    val profileColor = state.selected?.let { Color(it.color) } ?: OloColors.Primary
+    val profileColor = (gateProfile ?: state.selected)?.let { Color(it.color) } ?: OloColors.Primary
 
     Column(Modifier.fillMaxSize().background(OloColors.Background)) {
         HeaderBar(
             profiles = state.profiles,
-            selectedId = state.selected?.id,
+            selectedId = gateProfile?.id,
             onSelect = vm::select,
             onAdd = { showAdd = true },
-            onEdit = { state.selected?.let { editProfile = it } },
+            onEdit = { (gateProfile ?: state.selected)?.let { editProfile = it } },
         )
-        val sel = state.selected
-        val gated = sel != null && sel.locked && sel.id !in unlocked
         Box(Modifier.weight(1f)) {
-            if (gated && sel != null) {
-                LockGate(sel, profileColor) {
+            if (gated && gateProfile != null) {
+                LockGate(gateProfile, profileColor) {
                     val act = activity ?: return@LockGate
                     BiometricAuth.authenticate(
-                        act, title = "${sel.name} 프로필 잠금 해제", subtitle = "생체인증 또는 화면 잠금으로 확인",
-                        onSuccess = { vm.unlock(sel.id) },
+                        act, title = "${gateProfile.name} 프로필 잠금 해제", subtitle = "생체인증 또는 화면 잠금으로 확인",
+                        onSuccess = { vm.unlock(gateProfile.id) },
                         onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() },
                     )
                 }
@@ -118,14 +132,6 @@ private fun App(vm: HomeViewModel = viewModel()) {
                 Tab.RECORD -> RecordTab(state) { recordDate = it }
                 Tab.STATS -> StatsTab(state, profileColor)
                 Tab.SETTINGS -> SettingsTab(state,
-                    onToggleLock = { p, locked ->
-                        if (locked && !BiometricAuth.canAuthenticate(context)) {
-                            Toast.makeText(context, "기기 화면 잠금(생체/PIN)을 먼저 설정해 주세요.", Toast.LENGTH_LONG).show()
-                        } else {
-                            vm.updateProfile(p, p.name, p.color, p.defaultCycleLength, p.defaultPeriodLength, p.onBirthControl, locked)
-                            if (locked) vm.unlock(p.id) // 지금 보고 있으니 이 세션은 계속 열어 둔다.
-                        }
-                    },
                     onEditProfile = { editProfile = it },
                     onAbout = { showAbout = true })
             }
@@ -137,8 +143,8 @@ private fun App(vm: HomeViewModel = viewModel()) {
         ProfileEditorDialog(
             original = null,
             onDismiss = { showAdd = false },
-            onSave = { name, color, cycle, period, birth, locked ->
-                vm.addProfile(name, color, cycle, period, birth, locked); showAdd = false
+            onSave = { name, color, cycle, period, birth, locked, photo ->
+                vm.addProfile(name, color, cycle, period, birth, locked, photo); showAdd = false
             },
             onDelete = null,
         )
@@ -147,8 +153,11 @@ private fun App(vm: HomeViewModel = viewModel()) {
         ProfileEditorDialog(
             original = profile,
             onDismiss = { editProfile = null },
-            onSave = { name, color, cycle, period, birth, locked ->
-                vm.updateProfile(profile, name, color, cycle, period, birth, locked); editProfile = null
+            onSave = { name, color, cycle, period, birth, locked, photo ->
+                vm.updateProfile(profile, name, color, cycle, period, birth, locked, photo)
+                // 방금 잠금을 켰다면(직전에 인증 의사 확인) 지금 보고 있는 세션은 계속 열어 둔다.
+                if (locked) vm.unlock(profile.id)
+                editProfile = null
             },
             onDelete = if (state.profiles.size > 1) { { vm.deleteProfile(profile); editProfile = null } } else null,
         )
@@ -182,20 +191,12 @@ private fun HeaderBar(
     ) {
         Text("OLO Cycle", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
         profiles.forEach { p ->
-            Box(
-                Modifier.padding(start = 8.dp).size(38.dp).clip(CircleShape).background(Color(p.color))
-                    .border(2.dp, if (p.id == selectedId) Color.White else Color.White.copy(alpha = 0.45f), CircleShape)
-                    .clickable { onSelect(p.id) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(p.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                if (p.locked) {
-                    Box(Modifier.align(Alignment.BottomEnd).size(14.dp).clip(CircleShape).background(OloColors.Surface),
-                        contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Lock, "잠김", tint = OloColors.Muted, modifier = Modifier.size(9.dp))
-                    }
-                }
-            }
+            ProfileAvatar(
+                profile = p, size = 38.dp,
+                modifier = Modifier.padding(start = 8.dp).clickable { onSelect(p.id) },
+                borderColor = if (p.id == selectedId) Color.White else Color.White.copy(alpha = 0.45f),
+                showLock = true,
+            )
         }
         Box(
             Modifier.padding(start = 8.dp).size(38.dp).clip(CircleShape)
@@ -222,6 +223,44 @@ private fun BottomNav(current: Tab, onSelect: (Tab) -> Unit) {
                 Text(t.label, fontSize = 11.sp, color = if (on) OloColors.Primary else OloColors.Muted,
                     fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
             }
+        }
+    }
+}
+
+/** Decodes a profile photo path into an [ImageBitmap], cached per path. Null path/decode → colour+initial. */
+@Composable
+private fun rememberProfileBitmap(path: String?): ImageBitmap? =
+    remember(path) { path?.let { runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull() } }
+
+/**
+ * 프로필 아바타: 사진이 있으면 사진, 없으면 프로필 색 + 이름 이니셜. 사진·색은 프로필 고유 정체성이라
+ * 헤더·목록·편집창에서 같은 규칙으로 보여 준다.
+ */
+@Composable
+private fun ProfileAvatar(
+    profile: Profile,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    borderColor: Color? = null,
+    borderWidth: Dp = 2.dp,
+    showLock: Boolean = false,
+) {
+    val bmp = rememberProfileBitmap(profile.photoPath)
+    Box(
+        modifier.size(size).clip(CircleShape).background(Color(profile.color))
+            .then(if (borderColor != null) Modifier.border(borderWidth, borderColor, CircleShape) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bmp != null) {
+            Image(bmp, contentDescription = profile.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+            Text(profile.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.38f).sp)
+        }
+        if (showLock && profile.locked) {
+            Box(
+                Modifier.align(Alignment.BottomEnd).size(size * 0.37f).clip(CircleShape).background(OloColors.Surface),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Default.Lock, "잠김", tint = OloColors.Muted, modifier = Modifier.size(size * 0.24f)) }
         }
     }
 }
@@ -583,12 +622,12 @@ private fun Kpi(modifier: Modifier, value: String, label: String) {
 @Composable
 private fun SettingsTab(
     state: HomeState,
-    onToggleLock: (Profile, Boolean) -> Unit,
     onEditProfile: (Profile) -> Unit,
     onAbout: () -> Unit,
 ) {
+    // 설정에는 앱 전체 공통 항목만 둔다. 이름·색·사진·주기·잠금 같은 개인별 설정은 각 프로필(편집창)에 있다.
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        SectionTitle("설정 · 개인정보", state.selected?.name ?: "")
+        SectionTitle("설정 · 개인정보", "앱 전체 공통 항목")
         // 프라이버시 안내를 최상단에.
         Card(Modifier.fillMaxWidth().padding(16.dp, 8.dp), colors = CardDefaults.cardColors(containerColor = OloColors.AccentContainer)) {
             Column(Modifier.padding(16.dp)) {
@@ -599,22 +638,12 @@ private fun SettingsTab(
                 }
             }
         }
-        state.selected?.let { sel ->
-            Row(Modifier.fillMaxWidth().padding(20.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("이 프로필 잠금", fontWeight = FontWeight.SemiBold, color = OloColors.Ink)
-                    Text("선택하면 이 프로필을 열 때 생체인증/PIN을 요구합니다", color = OloColors.Muted, fontSize = 12.sp)
-                }
-                Switch(sel.locked, { onToggleLock(sel, it) })
-            }
-            HorizontalDivider(color = OloColors.Line)
-        }
         SettingRow("구성원 관리") {}
+        Text("이름·사진·색상·주기·잠금은 각 구성원을 눌러 프로필에서 설정합니다.",
+            Modifier.padding(24.dp, 0.dp, 24.dp, 6.dp), color = OloColors.Muted, fontSize = 12.sp)
         state.profiles.forEach { p ->
             Row(Modifier.fillMaxWidth().clickable { onEditProfile(p) }.padding(24.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(28.dp).clip(CircleShape).background(Color(p.color)), contentAlignment = Alignment.Center) {
-                    Text(p.name.take(1), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
+                ProfileAvatar(p, size = 32.dp)
                 Spacer(Modifier.width(12.dp))
                 Text(p.name, Modifier.weight(1f), color = OloColors.Ink)
                 if (p.locked) Icon(Icons.Default.Lock, "잠김", tint = OloColors.Muted, modifier = Modifier.size(16.dp))
@@ -680,7 +709,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
 private fun ProfileEditorDialog(
     original: Profile?,
     onDismiss: () -> Unit,
-    onSave: (name: String, color: Int, cycle: Int, period: Int, birthControl: Boolean, locked: Boolean) -> Unit,
+    onSave: (name: String, color: Int, cycle: Int, period: Int, birthControl: Boolean, locked: Boolean, photoPath: String?) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
     var name by remember { mutableStateOf(original?.name ?: "") }
@@ -691,13 +720,26 @@ private fun ProfileEditorDialog(
     var period by remember { mutableStateOf(original?.defaultPeriodLength ?: 5) }
     var birthControl by remember { mutableStateOf(original?.onBirthControl ?: false) }
     var locked by remember { mutableStateOf(original?.locked ?: false) }
+    var photoPath by remember { mutableStateOf(original?.photoPath) }
     var confirmDelete by remember { mutableStateOf(false) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    // 시스템 사진 선택기(권한 불필요). 고른 이미지는 내부 저장소로 복사하고 경로만 기억한다.
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
+        if (uri != null) {
+            val saved = ProfilePhotos.copyToInternal(ctx, uri)
+            if (saved != null) {
+                if (photoPath != null && photoPath != original?.photoPath) ProfilePhotos.delete(photoPath) // 저장 전 교체분 정리
+                photoPath = saved
+            } else {
+                Toast.makeText(ctx, "사진을 불러오지 못했습니다.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = { onSave(name, OloColors.ProfilePalette[colorIndex].toArgb(), cycle, period, birthControl, locked) }) {
+            TextButton(onClick = { onSave(name, OloColors.ProfilePalette[colorIndex].toArgb(), cycle, period, birthControl, locked, photoPath) }) {
                 Text(if (original == null) "만들기" else "저장")
             }
         },
@@ -705,6 +747,30 @@ private fun ProfileEditorDialog(
         title = { Text(if (original == null) "구성원 추가" else "프로필 편집") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                // 사진: 있으면 미리보기, 없으면 색+이니셜. 선택/제거 버튼을 옆에.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val previewBmp = rememberProfileBitmap(photoPath)
+                    Box(Modifier.size(64.dp).clip(CircleShape).background(OloColors.ProfilePalette[colorIndex]), contentAlignment = Alignment.Center) {
+                        if (previewBmp != null) {
+                            Image(previewBmp, "프로필 사진", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        } else {
+                            Text(name.take(1).ifBlank { "?" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                        }
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        TextButton(onClick = {
+                            photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }) { Text(if (photoPath == null) "사진 추가" else "사진 변경") }
+                        if (photoPath != null) {
+                            TextButton(onClick = {
+                                if (photoPath != original?.photoPath) ProfilePhotos.delete(photoPath) // 저장 전 새로 만든 파일이면 정리
+                                photoPath = null
+                            }) { Text("사진 제거", color = OloColors.Muted) }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(name, { name = it }, label = { Text("이름(별명)") }, singleLine = true)
                 Spacer(Modifier.height(12.dp))
                 Text("프로필 색상", fontSize = 12.sp, color = OloColors.Muted)
