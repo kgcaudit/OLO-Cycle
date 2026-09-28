@@ -86,4 +86,32 @@ class CyclePredictorTest {
         val p = CyclePredictor.predictFrom(d("2026-09-29"), CycleParams(28, 5, 14), basedOnActualStart = false)
         assertEquals(Phase.PREDICTED_PERIOD, CyclePredictor.phaseOf(d("2026-09-30"), p))
     }
+
+    @Test
+    fun phaseForDayColorsEveryRecordedPeriod() {
+        val params = CycleParams(28, 5, 14)
+        val starts = listOf(d("2026-09-02"), d("2026-09-28"))
+        // Both recorded periods are PERIOD, in their own 5-day windows.
+        assertEquals(Phase.PERIOD, CyclePredictor.phaseForDay(d("2026-09-02"), starts, params))
+        assertEquals(Phase.PERIOD, CyclePredictor.phaseForDay(d("2026-09-06"), starts, params))
+        assertEquals(Phase.PERIOD, CyclePredictor.phaseForDay(d("2026-09-28"), starts, params))
+        assertEquals(Phase.PERIOD, CyclePredictor.phaseForDay(d("2026-10-02"), starts, params))
+        // A gap day between them is not period.
+        assertEquals(Phase.UNKNOWN, CyclePredictor.phaseForDay(d("2026-08-31"), starts, params)) // before first
+    }
+
+    @Test
+    fun phaseForDayPredictsFutureCyclePeriod() {
+        val params = CycleParams(28, 5, 14)
+        val starts = listOf(d("2026-09-02"))
+        // Next projected start = 9/30; its bleeding window is a PREDICTED period.
+        assertEquals(Phase.PREDICTED_PERIOD, CyclePredictor.phaseForDay(d("2026-09-30"), starts, params))
+        assertEquals(Phase.OVULATION, CyclePredictor.phaseForDay(d("2026-09-16"), starts, params)) // 9/30 - 14
+        assertEquals(Phase.PMS, CyclePredictor.phaseForDay(d("2026-09-27"), starts, params))
+    }
+
+    @Test
+    fun phaseForDayEmptyIsUnknown() {
+        assertEquals(Phase.UNKNOWN, CyclePredictor.phaseForDay(d("2026-09-02"), emptyList(), CycleParams()))
+    }
 }

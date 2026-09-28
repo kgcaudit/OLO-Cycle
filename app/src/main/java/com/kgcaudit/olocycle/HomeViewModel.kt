@@ -39,9 +39,12 @@ data class HomeState(
     val recentCycleLengths: List<Int> = emptyList(),
     val today: LocalDate = LocalDate.now(),
 ) {
-    /** Phase for [day], derived on demand so the calendar can color each cell. */
+    /**
+     * Phase for [day], from all recorded starts + projection, so every recorded period colours the
+     * calendar (not only the current cycle).
+     */
     fun phaseOf(day: LocalDate): Phase =
-        prediction?.let { CyclePredictor.phaseOf(day, it) } ?: Phase.UNKNOWN
+        params?.let { CyclePredictor.phaseForDay(day, periodStarts, it) } ?: Phase.UNKNOWN
 
     fun currentPhase(): Phase = phaseOf(today)
 

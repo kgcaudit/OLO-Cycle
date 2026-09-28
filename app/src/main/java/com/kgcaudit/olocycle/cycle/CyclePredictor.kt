@@ -96,6 +96,49 @@ object CyclePredictor {
         else -> Phase.UNKNOWN
     }
 
+    /**
+     * Classifies any calendar [day] against **all** recorded [periodStarts] plus forward projection,
+     * so the month view colours every recorded period (past and present) and predicts upcoming ones —
+     * not just the single cycle around today.
+     *
+     * A day inside a recorded start's bleeding window is [Phase.PERIOD]; a projected future cycle's
+     * bleeding window is [Phase.PREDICTED_PERIOD]. Fertile/ovulation/PMS are derived from the start of
+     * the cycle that contains [day] and its following start (recorded when known, else projected).
+     */
+    fun phaseForDay(day: LocalDate, periodStarts: List<LocalDate>, params: CycleParams): Phase {
+        val starts = periodStarts.distinct().sorted()
+        if (starts.isEmpty()) return Phase.UNKNOWN
+
+        // Recorded bleeding days win outright, in any month.
+        starts.forEach { s ->
+            if (!day.isBefore(s) && day.isBefore(s.plusDays(params.periodLength.toLong()))) return Phase.PERIOD
+        }
+        if (day.isBefore(starts.first())) return Phase.UNKNOWN
+
+        // The cycle containing [day]: anchor = its start, next = the following start.
+        var anchor = starts.last { !it.isAfter(day) }
+        var anchorRecorded = true
+        var next = starts.firstOrNull { it.isAfter(anchor) } ?: anchor.plusDays(params.cycleLength.toLong())
+        while (!day.isBefore(next)) { // roll into projected future cycles
+            anchor = next
+            anchorRecorded = false
+            next = starts.firstOrNull { it.isAfter(anchor) } ?: anchor.plusDays(params.cycleLength.toLong())
+        }
+
+        if (!anchorRecorded && day.isBefore(anchor.plusDays(params.periodLength.toLong()))) return Phase.PREDICTED_PERIOD
+
+        val ovulation = next.minusDays(params.lutealLength.toLong())
+        val fertileStart = ovulation.minusDays(5)
+        val fertileEnd = ovulation.plusDays(1)
+        return when {
+            day == ovulation -> Phase.OVULATION
+            !day.isBefore(fertileStart) && !day.isAfter(fertileEnd) -> Phase.FERTILE
+            !day.isBefore(next.minusDays(5)) && day.isBefore(next) -> Phase.PMS
+            day.isAfter(ovulation) -> Phase.LUTEAL
+            else -> Phase.FOLLICULAR
+        }
+    }
+
     private operator fun ClosedRange<LocalDate>.contains(d: LocalDate) =
         !d.isBefore(start) && !d.isAfter(endInclusive)
 }
