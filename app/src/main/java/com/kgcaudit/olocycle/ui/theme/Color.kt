@@ -3,39 +3,47 @@ package com.kgcaudit.olocycle.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * OLO Cycle brand palette — our own identity, deliberately distinct from other period apps:
- * a plum primary with a warm coral accent, and calm phase colors on a soft lilac-cream ground.
+ * OLO 디자인 시스템(밝은 테마) 값. crosspoint-reader의 인계 묶음 CpTheme 값을 그대로 옮겼다.
+ * 따뜻한 클레이 브랜드 + 아이보리 웜톤 중립색이 이 계열 앱들을 한 식구로 묶는다.
+ * (다크 모드는 다음 단계에서 토큰 한 곳으로 추가한다.)
  */
 object OloColors {
-    val Primary = Color(0xFF6D4AA3)      // OLO Plum
-    val PrimaryDark = Color(0xFF553A85)
+    // 역할색
+    val Background = Color(0xFFF7F4EF)
+    val Surface = Color(0xFFFCFAF6)
+    val SurfaceSoft = Color(0xFFEFEAE1) // 빈 칸·판 바탕(dialog 계열)
+    val Ink = Color(0xFF1D1A16)         // 본문 글자(text)
+    val Muted = Color(0xFF574D45)       // 보조 글자(textMuted)
+    val Line = Color(0xFFD6CCC1)        // 구분선(divider)
+    val Outline = Color(0xFF8B7F74)     // 테두리 단추 선
+
+    val Primary = Color(0xFFB95B3B)     // 브랜드 클레이(accent)
     val OnPrimary = Color(0xFFFFFFFF)
-    val Accent = Color(0xFFF2795B)       // OLO Coral
+    val Accent = Color(0xFFB95B3B)      // 별칭(그라데이션 등)
+    val AccentContainer = Color(0xFFF6E0D6)
+    val OnAccentContainer = Color(0xFF4A1E0C)
+    val Error = Color(0xFFA50E2E)       // 삭제·오류(크림슨) — 브랜드와 색상 자체를 가른다
 
-    val Background = Color(0xFFFBF7FA)
-    val Surface = Color(0xFFFFFFFF)
-    val SurfaceSoft = Color(0xFFF5EEF5)
-    val Ink = Color(0xFF2C2230)
-    val Muted = Color(0xFF8A7E90)
-    val Line = Color(0xFFEBE1EC)
+    // 주기 단계색 — 뜻이 있는 색. OLO 웜톤에 맞춰 재조율(한 곳에 정의).
+    val Period = Color(0xFFC24A63)
+    val PeriodLight = Color(0xFFF2DBE0)
+    val Fertile = Color(0xFF3E7F80)
+    val FertileLight = Color(0xFFD9EAEA)
+    val Ovulation = Color(0xFF55606B)
+    val OvulationLight = Color(0xFFDEE2E6)
+    val Pms = Color(0xFFB07A8E)         // 웜 모브
+    val PmsLight = Color(0xFFEDE0E5)
 
-    // Cycle phases
-    val Period = Color(0xFFE15C74)
-    val PeriodLight = Color(0xFFF7DBE3)
-    val Fertile = Color(0xFF2FA58C)
-    val FertileLight = Color(0xFFD6F0EA)
-    val Ovulation = Color(0xFF3E8FC7)
-    val OvulationLight = Color(0xFFD8EAF6)
-    val Pms = Color(0xFFB98BD9)
-    val PmsLight = Color(0xFFEEE1F7)
-
-    /** Accent colors offered when creating a member profile. */
+    /**
+     * 구성원 아바타·타일 색(정체성 색). 화면 강조색(클레이)과 섞지 않고, 구성원 구분에만 쓴다.
+     * OLO 계열의 뜻색(폴더 클레이·책 틸·문서 슬레이트·그 밖 웜그레이)에서 골랐다.
+     */
     val ProfilePalette = listOf(
-        Color(0xFF6D4AA3), // plum
-        Color(0xFFF2795B), // coral
-        Color(0xFF2FA58C), // teal
-        Color(0xFFE8A13C), // amber
-        Color(0xFFE15C74), // rose
-        Color(0xFF4F79C4), // blue
+        Color(0xFFB95B3B), // 클레이
+        Color(0xFF3E7F80), // 틸
+        Color(0xFF55606B), // 슬레이트
+        Color(0xFF7A7168), // 웜그레이
+        Color(0xFFC79A3C), // 앰버
+        Color(0xFF8E5B7A), // 모브
     )
 }

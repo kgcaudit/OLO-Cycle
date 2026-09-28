@@ -1,24 +1,26 @@
 package com.kgcaudit.olocycle.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
-private val LightScheme = lightColorScheme(
+// OLO 밝은 테마 하나. 화면은 값이 아니라 역할 이름(OloColors)만 쓴다.
+private val OloLightScheme = lightColorScheme(
     primary = OloColors.Primary,
     onPrimary = OloColors.OnPrimary,
-    secondary = OloColors.Accent,
+    primaryContainer = OloColors.AccentContainer,
+    onPrimaryContainer = OloColors.OnAccentContainer,
+    secondary = OloColors.Primary,
     background = OloColors.Background,
     surface = OloColors.Surface,
     onBackground = OloColors.Ink,
     onSurface = OloColors.Ink,
+    error = OloColors.Error,
+    outline = OloColors.Outline,
 )
 
 @Composable
 fun OloTheme(content: @Composable () -> Unit) {
-    // A single warm light scheme for now; a dark scheme is planned.
-    @Suppress("UNUSED_EXPRESSION") isSystemInDarkTheme()
-    MaterialTheme(colorScheme = LightScheme, typography = Typography(), content = content)
+    MaterialTheme(colorScheme = OloLightScheme, typography = Typography(), content = content)
 }

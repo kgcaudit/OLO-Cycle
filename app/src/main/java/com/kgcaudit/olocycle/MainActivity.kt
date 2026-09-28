@@ -62,9 +62,9 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
     var editProfile by remember { mutableStateOf<Profile?>(null) }
     var recordDate by remember { mutableStateOf<LocalDate?>(null) }
 
-    // The whole screen's accent follows the selected member's color, so switching profiles is
-    // immediately visible even before any cycle data is recorded.
-    val accent = state.selected?.let { Color(it.color) } ?: OloColors.Primary
+    // OLO 규칙: 화면 강조는 클레이 하나. 구성원은 아바타·타일 색으로만 구분한다
+    // (화면 전체를 프로필 색으로 물들이지 않는다).
+    val accent = OloColors.Primary
 
     Column(Modifier.fillMaxSize().background(OloColors.Background)) {
         BrandHeader(
@@ -323,7 +323,7 @@ private fun TodayCard(daysUntil: Int?, nextStart: LocalDate?, selected: Profile?
     if (selected == null) return
     Surface(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(14.dp), color = lerp(accent, Color.White, 0.85f),
+        shape = RoundedCornerShape(14.dp), color = OloColors.AccentContainer,
     ) {
         Column(Modifier.padding(16.dp)) {
             Text("오늘 · ${LocalDate.now().monthValue}월 ${LocalDate.now().dayOfMonth}일", color = OloColors.Muted, fontSize = 12.sp)
@@ -333,7 +333,7 @@ private fun TodayCard(daysUntil: Int?, nextStart: LocalDate?, selected: Profile?
                 daysUntil == 0 -> "오늘이 생리 예정일이에요"
                 else -> "예정일에서 ${-daysUntil}일 지남"
             }
-            Text(headline, color = lerp(accent, Color.Black, 0.15f), fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+            Text(headline, color = OloColors.OnAccentContainer, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
             nextStart?.let {
                 Text("예정일 ${it.monthValue}/${it.dayOfMonth} · 날짜를 눌러 생리 시작일 기록", color = OloColors.Muted, fontSize = 12.sp)
             }
