@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,9 +62,14 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
     var editProfile by remember { mutableStateOf<Profile?>(null) }
     var recordDate by remember { mutableStateOf<LocalDate?>(null) }
 
+    // The whole screen's accent follows the selected member's color, so switching profiles is
+    // immediately visible even before any cycle data is recorded.
+    val accent = state.selected?.let { Color(it.color) } ?: OloColors.Primary
+
     Column(Modifier.fillMaxSize().background(OloColors.Background)) {
         BrandHeader(
             selected = state.selected,
+            accent = accent,
             onEditSelected = { state.selected?.let { editProfile = it } },
         )
         ProfileBar(
@@ -76,6 +82,7 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
         MonthCalendar(
             month = visibleMonth,
             today = state.today,
+            accent = accent,
             phaseOf = state::phaseOf,
             hasNote = state::hasNote,
             enabled = state.selected != null,
@@ -83,7 +90,7 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
         )
         PhaseLegend()
         Spacer(Modifier.height(8.dp))
-        TodayCard(state.daysUntilNextPeriod, state.prediction?.nextPeriodStart, state.selected)
+        TodayCard(state.daysUntilNextPeriod, state.prediction?.nextPeriodStart, state.selected, accent)
         Spacer(Modifier.weight(1f))
         DisclaimerBar()
     }
@@ -130,15 +137,17 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
 }
 
 @Composable
-private fun BrandHeader(selected: Profile?, onEditSelected: () -> Unit) {
-    val gradient = Brush.horizontalGradient(listOf(OloColors.Primary, OloColors.Accent))
+private fun BrandHeader(selected: Profile?, accent: Color, onEditSelected: () -> Unit) {
+    // Gradient runs from the member's color to a darker shade of it, giving each profile a
+    // distinct header while keeping one visual language.
+    val gradient = Brush.horizontalGradient(listOf(accent, lerp(accent, Color.Black, 0.28f)))
     Row(
         Modifier.fillMaxWidth().background(gradient).statusBarsPadding()
             .padding(20.dp, 16.dp, 12.dp, 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("OLO 사이클", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+            Text("OLO Cycle", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
             Text(
                 selected?.let { "${it.name} 님의 주기" } ?: "구성원을 추가하세요",
                 color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp,
@@ -160,7 +169,7 @@ private fun ProfileBar(profiles: List<Profile>, selectedId: Long?, onSelect: (Lo
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(profiles, key = { it.id }) { p ->
-            Avatar(p, selected = p.id == selectedId) { onSelect(p.id) }
+            Avatar(p, selected = p.id == selectedId, onClick = { onSelect(p.id) })
         }
         item {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onAdd)) {
@@ -177,11 +186,13 @@ private fun ProfileBar(profiles: List<Profile>, selectedId: Long?, onSelect: (Lo
 
 @Composable
 private fun Avatar(profile: Profile, selected: Boolean, onClick: () -> Unit) {
+    val ring = lerp(Color(profile.color), Color.Black, 0.35f) // darker shade of the member's own color
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
         Box(contentAlignment = Alignment.Center) {
             Box(
-                Modifier.size(52.dp).clip(CircleShape).background(Color(profile.color))
-                    .then(if (selected) Modifier.border(3.dp, OloColors.Primary, CircleShape) else Modifier),
+                Modifier.size(52.dp)
+                    .then(if (selected) Modifier.border(3.dp, ring, CircleShape).padding(3.dp) else Modifier)
+                    .clip(CircleShape).background(Color(profile.color)),
                 contentAlignment = Alignment.Center,
             ) { Text(profile.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
             if (profile.locked) {
@@ -235,6 +246,7 @@ private fun MonthHeader(month: YearMonth, onPrev: () -> Unit, onNext: () -> Unit
 private fun MonthCalendar(
     month: YearMonth,
     today: LocalDate,
+    accent: Color,
     phaseOf: (LocalDate) -> Phase,
     hasNote: (LocalDate) -> Boolean,
     enabled: Boolean,
@@ -259,7 +271,7 @@ private fun MonthCalendar(
             Row(Modifier.fillMaxWidth()) {
                 week.forEach { day ->
                     Box(Modifier.weight(1f).padding(3.dp)) {
-                        if (day != null) DayCell(day, day == today, phaseOf(day), hasNote(day), enabled, onDayClick)
+                        if (day != null) DayCell(day, day == today, accent, phaseOf(day), hasNote(day), enabled, onDayClick)
                     }
                 }
                 repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
@@ -269,11 +281,11 @@ private fun MonthCalendar(
 }
 
 @Composable
-private fun DayCell(day: LocalDate, isToday: Boolean, phase: Phase, hasNote: Boolean, enabled: Boolean, onClick: (LocalDate) -> Unit) {
+private fun DayCell(day: LocalDate, isToday: Boolean, accent: Color, phase: Phase, hasNote: Boolean, enabled: Boolean, onClick: (LocalDate) -> Unit) {
     val (bg, fg) = phaseColors(phase)
     Box(
         Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(bg)
-            .then(if (isToday) Modifier.border(2.dp, OloColors.Primary, RoundedCornerShape(10.dp)) else Modifier)
+            .then(if (isToday) Modifier.border(2.dp, accent, RoundedCornerShape(10.dp)) else Modifier)
             .clickable(enabled = enabled) { onClick(day) },
         contentAlignment = Alignment.Center,
     ) {
@@ -307,11 +319,11 @@ private fun phaseLabel(phase: Phase): String? = when (phase) {
 }
 
 @Composable
-private fun TodayCard(daysUntil: Int?, nextStart: LocalDate?, selected: Profile?) {
+private fun TodayCard(daysUntil: Int?, nextStart: LocalDate?, selected: Profile?, accent: Color) {
     if (selected == null) return
     Surface(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(14.dp), color = OloColors.PeriodLight,
+        shape = RoundedCornerShape(14.dp), color = lerp(accent, Color.White, 0.85f),
     ) {
         Column(Modifier.padding(16.dp)) {
             Text("오늘 · ${LocalDate.now().monthValue}월 ${LocalDate.now().dayOfMonth}일", color = OloColors.Muted, fontSize = 12.sp)
@@ -321,7 +333,7 @@ private fun TodayCard(daysUntil: Int?, nextStart: LocalDate?, selected: Profile?
                 daysUntil == 0 -> "오늘이 생리 예정일이에요"
                 else -> "예정일에서 ${-daysUntil}일 지남"
             }
-            Text(headline, color = OloColors.Period, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+            Text(headline, color = lerp(accent, Color.Black, 0.15f), fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
             nextStart?.let {
                 Text("예정일 ${it.monthValue}/${it.dayOfMonth} · 날짜를 눌러 생리 시작일 기록", color = OloColors.Muted, fontSize = 12.sp)
             }
