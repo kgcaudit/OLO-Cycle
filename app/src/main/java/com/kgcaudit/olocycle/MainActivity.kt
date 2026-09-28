@@ -8,7 +8,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +55,7 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
     var showAdd by remember { mutableStateOf(false) }
+    var recordDate by remember { mutableStateOf<LocalDate?>(null) }
 
     Column(
         Modifier.fillMaxSize().background(OloColors.Background).statusBarsPadding(),
@@ -67,7 +72,9 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
             month = visibleMonth,
             today = state.today,
             phaseOf = state::phaseOf,
-            onDayClick = vm::togglePeriodStart,
+            hasNote = state::hasNote,
+            enabled = state.selected != null,
+            onDayClick = { recordDate = it },
         )
         Spacer(Modifier.height(12.dp))
         TodayCard(state.daysUntilNextPeriod, state.prediction?.nextPeriodStart, state.selected)
@@ -81,6 +88,20 @@ private fun HomeScreen(vm: HomeViewModel = viewModel()) {
             onCreate = { name, color, cycle, period, locked ->
                 vm.addProfile(name, color, cycle, period, locked)
                 showAdd = false
+            },
+        )
+    }
+
+    recordDate?.let { date ->
+        DayRecordDialog(
+            date = date,
+            isPeriodStart = state.isPeriodStart(date),
+            existing = state.recordOf(date),
+            onDismiss = { recordDate = null },
+            onSetPeriodStart = { vm.setPeriodStart(date, it) },
+            onSave = { flow, symptoms, mood, temp, memo ->
+                vm.saveDayRecord(date, flow, symptoms, mood, temp, memo)
+                recordDate = null
             },
         )
     }
@@ -147,7 +168,14 @@ private fun MonthHeader(month: YearMonth, onPrev: () -> Unit, onNext: () -> Unit
 }
 
 @Composable
-private fun MonthCalendar(month: YearMonth, today: LocalDate, phaseOf: (LocalDate) -> Phase, onDayClick: (LocalDate) -> Unit) {
+private fun MonthCalendar(
+    month: YearMonth,
+    today: LocalDate,
+    phaseOf: (LocalDate) -> Phase,
+    hasNote: (LocalDate) -> Boolean,
+    enabled: Boolean,
+    onDayClick: (LocalDate) -> Unit,
+) {
     val first = month.atDay(1)
     val leading = first.dayOfWeek.value % 7 // Sunday-first grid
     val days = month.lengthOfMonth()
@@ -165,7 +193,11 @@ private fun MonthCalendar(month: YearMonth, today: LocalDate, phaseOf: (LocalDat
         Spacer(Modifier.height(4.dp))
         cells.chunked(7).forEach { week ->
             Row(Modifier.fillMaxWidth()) {
-                week.forEach { day -> Box(Modifier.weight(1f).padding(3.dp)) { if (day != null) DayCell(day, day == today, phaseOf(day), onDayClick) } }
+                week.forEach { day ->
+                    Box(Modifier.weight(1f).padding(3.dp)) {
+                        if (day != null) DayCell(day, day == today, phaseOf(day), hasNote(day), enabled, onDayClick)
+                    }
+                }
                 repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
             }
         }
@@ -173,17 +205,23 @@ private fun MonthCalendar(month: YearMonth, today: LocalDate, phaseOf: (LocalDat
 }
 
 @Composable
-private fun DayCell(day: LocalDate, isToday: Boolean, phase: Phase, onClick: (LocalDate) -> Unit) {
+private fun DayCell(day: LocalDate, isToday: Boolean, phase: Phase, hasNote: Boolean, enabled: Boolean, onClick: (LocalDate) -> Unit) {
     val (bg, fg) = phaseColors(phase)
     Box(
         Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(bg)
             .then(if (isToday) Modifier.border(2.dp, OloColors.Primary, RoundedCornerShape(10.dp)) else Modifier)
-            .clickable { onClick(day) },
+            .clickable(enabled = enabled) { onClick(day) },
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("${day.dayOfMonth}", color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             phaseLabel(phase)?.let { Text(it, color = fg, fontSize = 8.sp, fontWeight = FontWeight.Bold) }
+        }
+        if (hasNote) {
+            Box(
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp)
+                    .size(4.dp).clip(CircleShape).background(fg),
+            )
         }
     }
 }
@@ -289,3 +327,105 @@ private fun Stepper(label: String, value: Int, min: Int, max: Int, onChange: (In
     }
 }
 
+
+/** Flow-intensity labels; index maps to DayRecord.flow (0 = 없음). */
+private val FLOW_LABELS = listOf("없음", "적음", "보통", "많음")
+private val SYMPTOM_OPTIONS = listOf("복통", "두통", "허리통증", "부종", "여드름", "피로", "메스꺼움", "유방통")
+private val MOOD_OPTIONS = listOf("좋음", "평온", "예민", "우울", "불안")
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DayRecordDialog(
+    date: LocalDate,
+    isPeriodStart: Boolean,
+    existing: com.kgcaudit.olocycle.data.DayRecord?,
+    onDismiss: () -> Unit,
+    onSetPeriodStart: (Boolean) -> Unit,
+    onSave: (flow: Int?, symptoms: List<String>, mood: String?, temperature: Double?, memo: String?) -> Unit,
+) {
+    var periodStart by remember { mutableStateOf(isPeriodStart) }
+    var flow by remember { mutableStateOf(existing?.flow) }
+    val symptoms = remember {
+        mutableStateListOf<String>().apply {
+            existing?.symptoms?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.let { addAll(it) }
+        }
+    }
+    var mood by remember { mutableStateOf(existing?.mood) }
+    var temperature by remember { mutableStateOf(existing?.temperature?.toString() ?: "") }
+    var memo by remember { mutableStateOf(existing?.memo ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                onSetPeriodStart(periodStart)
+                onSave(flow, symptoms.toList(), mood, temperature.toDoubleOrNull(), memo)
+            }) { Text("저장") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        title = { Text("${date.monthValue}월 ${date.dayOfMonth}일 기록") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("생리 시작일", Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Switch(periodStart, { periodStart = it })
+                }
+                Text("이 날을 생리 시작일로 지정하면 예측이 갱신됩니다.", color = OloColors.Muted, fontSize = 11.sp)
+
+                FieldLabel("생리량")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    FLOW_LABELS.forEachIndexed { i, label ->
+                        SelectChip(label, selected = flow == i, color = OloColors.Period) {
+                            flow = if (flow == i) null else i
+                        }
+                    }
+                }
+
+                FieldLabel("증상")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    SYMPTOM_OPTIONS.forEach { s ->
+                        SelectChip(s, selected = s in symptoms, color = OloColors.Pms) {
+                            if (s in symptoms) symptoms.remove(s) else symptoms.add(s)
+                        }
+                    }
+                }
+
+                FieldLabel("기분")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    MOOD_OPTIONS.forEach { m ->
+                        SelectChip(m, selected = mood == m, color = OloColors.Fertile) {
+                            mood = if (mood == m) null else m
+                        }
+                    }
+                }
+
+                FieldLabel("기초체온 (℃)")
+                OutlinedTextField(
+                    temperature, { temperature = it }, singleLine = true,
+                    placeholder = { Text("예: 36.6") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                FieldLabel("메모")
+                OutlinedTextField(memo, { memo = it }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+            }
+        },
+    )
+}
+
+@Composable
+private fun FieldLabel(text: String) {
+    Text(text, color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+}
+
+@Composable
+private fun SelectChip(label: String, selected: Boolean, color: Color, onClick: () -> Unit) {
+    val bg = if (selected) color else OloColors.Surface
+    val fg = if (selected) Color.White else OloColors.Ink
+    Box(
+        Modifier.clip(RoundedCornerShape(16.dp))
+            .border(1.dp, if (selected) color else OloColors.Line, RoundedCornerShape(16.dp))
+            .background(bg).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
+    ) { Text(label, color = fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+}
