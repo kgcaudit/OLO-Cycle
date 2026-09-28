@@ -33,6 +33,7 @@ object OloColors {
     val OvulationLight = Color(0xFFDEE2E6)
     val Pms = Color(0xFFB07A8E)         // 웜 모브
     val PmsLight = Color(0xFFEDE0E5)
+    val Amber = Color(0xFFC79A3C)       // 증상 표시(달력 칸 기호)
 
     /**
      * 구성원 아바타·타일 색(정체성 색). 화면 강조색(클레이)과 섞지 않고, 구성원 구분에만 쓴다.

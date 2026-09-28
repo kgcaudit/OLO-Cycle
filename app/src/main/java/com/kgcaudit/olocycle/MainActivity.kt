@@ -30,10 +30,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
@@ -222,7 +224,7 @@ private fun HomeTab(
         ) { Text("＋ 오늘 기록", fontWeight = FontWeight.Bold) }
 
         MonthHeader(visibleMonth, profileColor, onPrevMonth, onNextMonth)
-        MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::hasNote,
+        MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::recordOf,
             enabled = state.selected != null, onDayClick = onDayClick)
         PhaseLegend()
         Text("예측은 참고용 추정치이며 피임·진단의 근거가 아닙니다.",
@@ -309,7 +311,7 @@ private fun MonthHeader(month: YearMonth, profileColor: Color, onPrev: () -> Uni
 @Composable
 private fun MonthCalendar(
     month: YearMonth, today: LocalDate, profileColor: Color,
-    phaseOf: (LocalDate) -> Phase, hasNote: (LocalDate) -> Boolean,
+    phaseOf: (LocalDate) -> Phase, recordOf: (LocalDate) -> com.kgcaudit.olocycle.data.DayRecord?,
     enabled: Boolean, onDayClick: (LocalDate) -> Unit,
 ) {
     val first = month.atDay(1)
@@ -332,7 +334,7 @@ private fun MonthCalendar(
             Row(Modifier.fillMaxWidth()) {
                 week.forEach { day ->
                     Box(Modifier.weight(1f).padding(3.dp)) {
-                        if (day != null) DayCell(day, day == today, profileColor, phaseOf(day), hasNote(day), enabled, onDayClick)
+                        if (day != null) DayCell(day, day == today, profileColor, phaseOf(day), recordOf(day), enabled, onDayClick)
                     }
                 }
                 repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
@@ -342,21 +344,74 @@ private fun MonthCalendar(
 }
 
 @Composable
-private fun DayCell(day: LocalDate, isToday: Boolean, profileColor: Color, phase: Phase, hasNote: Boolean, enabled: Boolean, onClick: (LocalDate) -> Unit) {
+private fun DayCell(
+    day: LocalDate, isToday: Boolean, profileColor: Color, phase: Phase,
+    record: com.kgcaudit.olocycle.data.DayRecord?, enabled: Boolean, onClick: (LocalDate) -> Unit,
+) {
     val (bg, fg) = phaseColors(phase)
+    val shape = RoundedCornerShape(10.dp)
     Box(
-        Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(bg)
-            .then(if (isToday) Modifier.border(2.dp, profileColor, RoundedCornerShape(10.dp)) else Modifier)
+        Modifier.fillMaxWidth().aspectRatio(1f).clip(shape).background(bg)
+            // 예측 생리 = 점선 테두리(Apple·Flo 관습), 배란 = ◯ 고리, 오늘 = 프로필 색 실선.
+            .drawBehind {
+                val stroke = 2.dp.toPx()
+                when (phase) {
+                    Phase.PREDICTED_PERIOD -> drawRoundRect(
+                        OloColors.Period, style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 5f))),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
+                    )
+                    Phase.OVULATION -> {
+                        val r = size.minDimension * 0.34f
+                        drawCircle(OloColors.Ovulation, r, style = Stroke(stroke))
+                    }
+                    else -> {}
+                }
+                if (isToday) drawRoundRect(
+                    profileColor, style = Stroke(stroke),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
+                )
+            }
             .clickable(enabled = enabled) { onClick(day) },
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${day.dayOfMonth}", color = fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            phaseLabel(phase)?.let { Text(it, color = fg, fontSize = 8.sp, fontWeight = FontWeight.Bold) }
+        Text("${day.dayOfMonth}", color = fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.align(Alignment.Center))
+        DayMarkers(record, Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp))
+    }
+}
+
+/** 칸 하단 기호: 생리량(물방울)·증상(앰버 점)·기분(틸 점)·메모(그레이 점). 최대 4개. */
+@Composable
+private fun DayMarkers(record: com.kgcaudit.olocycle.data.DayRecord?, modifier: Modifier) {
+    if (record == null) return
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        record.flow?.takeIf { it > 0 }?.let { FlowDrop(it) }
+        if (!record.symptoms.isNullOrBlank()) MarkerDot(OloColors.Amber)
+        if (!record.mood.isNullOrBlank()) MarkerDot(OloColors.Fertile)
+        if (!record.memo.isNullOrBlank()) MarkerDot(OloColors.Muted)
+    }
+}
+
+@Composable
+private fun MarkerDot(color: Color) {
+    Box(Modifier.size(5.dp).clip(CircleShape).background(color))
+}
+
+/** 생리량 물방울. 진하기로 양(1·2·3)을 표현. */
+@Composable
+private fun FlowDrop(intensity: Int) {
+    val alpha = when (intensity) { 1 -> 0.5f; 2 -> 0.75f; else -> 1f }
+    Canvas(Modifier.size(6.dp, 8.dp)) {
+        val w = size.width; val h = size.height
+        val p = androidx.compose.ui.graphics.Path().apply {
+            moveTo(w / 2, 0f)
+            cubicTo(w, h * 0.55f, w, h * 0.72f, w, h * 0.7f)
+            // teardrop: rounded bottom via arc-ish cubic
+            cubicTo(w, h, 0f, h, 0f, h * 0.7f)
+            cubicTo(0f, h * 0.72f, 0f, h * 0.55f, w / 2, 0f)
+            close()
         }
-        if (hasNote) {
-            Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp).size(4.dp).clip(CircleShape).background(fg))
-        }
+        drawPath(p, OloColors.Period.copy(alpha = alpha))
     }
 }
 
@@ -367,10 +422,6 @@ private fun phaseColors(phase: Phase): Pair<Color, Color> = when (phase) {
     Phase.OVULATION -> OloColors.OvulationLight to OloColors.Ovulation
     Phase.PMS -> OloColors.PmsLight to OloColors.Pms
     else -> Color.White to OloColors.Ink
-}
-
-private fun phaseLabel(phase: Phase): String? = when (phase) {
-    Phase.OVULATION -> "배란"; Phase.PMS -> "PMS"; Phase.PREDICTED_PERIOD -> "예정"; else -> null
 }
 
 @Composable
@@ -701,19 +752,19 @@ private fun DayRecordDialog(
                 }
                 Text("이 날을 생리 시작일로 지정하면 예측이 갱신됩니다.", color = OloColors.Muted, fontSize = 11.sp)
 
-                FieldLabel("생리량")
+                FieldLabel("생리량", OloColors.Period)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     FLOW_LABELS.forEachIndexed { i, label ->
                         SelectChip(label, selected = flow == i, color = OloColors.Period) { flow = if (flow == i) null else i }
                     }
                 }
-                FieldLabel("증상")
+                FieldLabel("증상", OloColors.Amber)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     SYMPTOM_OPTIONS.forEach { s ->
                         SelectChip(s, selected = s in symptoms, color = OloColors.Pms) { if (s in symptoms) symptoms.remove(s) else symptoms.add(s) }
                     }
                 }
-                FieldLabel("기분")
+                FieldLabel("기분", OloColors.Fertile)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     MOOD_OPTIONS.forEach { m ->
                         SelectChip(m, selected = mood == m, color = OloColors.Fertile) { mood = if (mood == m) null else m }
@@ -721,7 +772,7 @@ private fun DayRecordDialog(
                 }
                 FieldLabel("기초체온 (℃)")
                 OutlinedTextField(temperature, { temperature = it }, singleLine = true, placeholder = { Text("예: 36.6") }, modifier = Modifier.fillMaxWidth())
-                FieldLabel("메모")
+                FieldLabel("메모", OloColors.Muted)
                 OutlinedTextField(memo, { memo = it }, modifier = Modifier.fillMaxWidth(), minLines = 2)
             }
         },
@@ -729,8 +780,11 @@ private fun DayRecordDialog(
 }
 
 @Composable
-private fun FieldLabel(text: String) {
-    Text(text, color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+private fun FieldLabel(text: String, dot: Color? = null) {
+    Row(Modifier.padding(top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (dot != null) { Box(Modifier.size(7.dp).clip(CircleShape).background(dot)); Spacer(Modifier.width(6.dp)) }
+        Text(text, color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
 }
 
 @Composable
