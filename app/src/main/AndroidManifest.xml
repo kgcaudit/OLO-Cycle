@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 프로필 잠금(생체인증)용. 인터넷 권한은 없음 — 데이터는 기기에만 남는다. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

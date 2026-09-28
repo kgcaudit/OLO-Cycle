@@ -71,6 +71,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val db = OloDatabase.get(app)
     private val selectedId = MutableStateFlow<Long?>(null)
 
+    /** Ids unlocked this session; a locked profile stays gated until it appears here. */
+    private val _unlocked = MutableStateFlow<Set<Long>>(emptySet())
+    val unlocked: StateFlow<Set<Long>> = _unlocked
+
+    fun unlock(profileId: Long) { _unlocked.value = _unlocked.value + profileId }
+
     init {
         viewModelScope.launch { seedIfEmpty() }
     }

@@ -1,9 +1,10 @@
 package com.kgcaudit.olocycle
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.kgcaudit.olocycle.auth.BiometricAuth
 import com.kgcaudit.olocycle.cycle.Phase
 import com.kgcaudit.olocycle.data.Profile
 import com.kgcaudit.olocycle.ui.theme.OloColors
@@ -56,7 +58,7 @@ import java.time.YearMonth
 import kotlin.math.cos
 import kotlin.math.sin
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -74,6 +76,9 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 @Composable
 private fun App(vm: HomeViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val unlocked by vm.unlocked.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = context as? FragmentActivity
     var tab by remember { mutableStateOf(Tab.HOME) }
     var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
     var showAdd by remember { mutableStateOf(false) }
@@ -92,8 +97,19 @@ private fun App(vm: HomeViewModel = viewModel()) {
             onAdd = { showAdd = true },
             onEdit = { state.selected?.let { editProfile = it } },
         )
+        val sel = state.selected
+        val gated = sel != null && sel.locked && sel.id !in unlocked
         Box(Modifier.weight(1f)) {
-            when (tab) {
+            if (gated && sel != null) {
+                LockGate(sel, profileColor) {
+                    val act = activity ?: return@LockGate
+                    BiometricAuth.authenticate(
+                        act, title = "${sel.name} 프로필 잠금 해제", subtitle = "생체인증 또는 화면 잠금으로 확인",
+                        onSuccess = { vm.unlock(sel.id) },
+                        onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() },
+                    )
+                }
+            } else when (tab) {
                 Tab.HOME -> HomeTab(state, profileColor, visibleMonth,
                     onPrevMonth = { visibleMonth = visibleMonth.minusMonths(1) },
                     onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
@@ -103,7 +119,12 @@ private fun App(vm: HomeViewModel = viewModel()) {
                 Tab.STATS -> StatsTab(state, profileColor)
                 Tab.SETTINGS -> SettingsTab(state,
                     onToggleLock = { p, locked ->
-                        vm.updateProfile(p, p.name, p.color, p.defaultCycleLength, p.defaultPeriodLength, p.onBirthControl, locked)
+                        if (locked && !BiometricAuth.canAuthenticate(context)) {
+                            Toast.makeText(context, "기기 화면 잠금(생체/PIN)을 먼저 설정해 주세요.", Toast.LENGTH_LONG).show()
+                        } else {
+                            vm.updateProfile(p, p.name, p.color, p.defaultCycleLength, p.defaultPeriodLength, p.onBirthControl, locked)
+                            if (locked) vm.unlock(p.id) // 지금 보고 있으니 이 세션은 계속 열어 둔다.
+                        }
                     },
                     onEditProfile = { editProfile = it },
                     onAbout = { showAbout = true })
@@ -201,6 +222,26 @@ private fun BottomNav(current: Tab, onSelect: (Tab) -> Unit) {
                 Text(t.label, fontSize = 11.sp, color = if (on) OloColors.Primary else OloColors.Muted,
                     fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
             }
+        }
+    }
+}
+
+@Composable
+private fun LockGate(profile: Profile, accent: Color, onUnlock: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(Modifier.size(84.dp).clip(CircleShape).background(accent.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Lock, null, tint = accent, modifier = Modifier.size(38.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("${profile.name} 프로필이 잠겨 있습니다", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = OloColors.Ink)
+        Spacer(Modifier.height(4.dp))
+        Text("생체인증 또는 화면 잠금으로 확인하세요.", color = OloColors.Muted, fontSize = 13.sp, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(20.dp))
+        Button(onClick = onUnlock, colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary), shape = RoundedCornerShape(22.dp)) {
+            Icon(Icons.Default.Lock, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("잠금 해제", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -562,7 +603,7 @@ private fun SettingsTab(
             Row(Modifier.fillMaxWidth().padding(20.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("이 프로필 잠금", fontWeight = FontWeight.SemiBold, color = OloColors.Ink)
-                    Text("생체인증/PIN (표시 단계 · 실제 잠금은 다음 업데이트)", color = OloColors.Muted, fontSize = 12.sp)
+                    Text("선택하면 이 프로필을 열 때 생체인증/PIN을 요구합니다", color = OloColors.Muted, fontSize = 12.sp)
                 }
                 Switch(sel.locked, { onToggleLock(sel, it) })
             }
@@ -651,6 +692,7 @@ private fun ProfileEditorDialog(
     var birthControl by remember { mutableStateOf(original?.onBirthControl ?: false) }
     var locked by remember { mutableStateOf(original?.locked ?: false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -680,7 +722,12 @@ private fun ProfileEditorDialog(
                     Text("피임약 복용", Modifier.weight(1f), fontSize = 13.sp); Switch(birthControl, { birthControl = it })
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("프로필 잠금(생체인증/PIN)", Modifier.weight(1f), fontSize = 13.sp); Switch(locked, { locked = it })
+                    Text("프로필 잠금(생체인증/PIN)", Modifier.weight(1f), fontSize = 13.sp)
+                    Switch(locked, { on ->
+                        if (on && !BiometricAuth.canAuthenticate(ctx)) {
+                            android.widget.Toast.makeText(ctx, "기기 화면 잠금(생체/PIN)을 먼저 설정해 주세요.", android.widget.Toast.LENGTH_LONG).show()
+                        } else locked = on
+                    })
                 }
                 if (onDelete != null) {
                     Spacer(Modifier.height(8.dp))
