@@ -72,14 +72,15 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val db = OloDatabase.get(app)
     private val selectedId = MutableStateFlow<Long?>(null)
 
-    /** The picked id, exposed so the UI can gate a locked profile instantly — before its (slower) data loads. */
-    val selectedProfileId: StateFlow<Long?> = selectedId
+    // 앱 잠금은 프로필별이 아니라 앱 전체 한 곳에서만 켠다(공통 설정). SharedPreferences 로 저장한다.
+    private val prefs = app.getSharedPreferences("olo_settings", Application.MODE_PRIVATE)
+    private val _appLockEnabled = MutableStateFlow(prefs.getBoolean(KEY_APP_LOCK, false))
+    val appLockEnabled: StateFlow<Boolean> = _appLockEnabled
 
-    /** Ids unlocked this session; a locked profile stays gated until it appears here. */
-    private val _unlocked = MutableStateFlow<Set<Long>>(emptySet())
-    val unlocked: StateFlow<Set<Long>> = _unlocked
-
-    fun unlock(profileId: Long) { _unlocked.value = _unlocked.value + profileId }
+    fun setAppLock(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_APP_LOCK, enabled).apply()
+        _appLockEnabled.value = enabled
+    }
 
     init {
         viewModelScope.launch { seedIfEmpty() }
@@ -182,7 +183,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addProfile(
         name: String, color: Int, cycleLength: Int, periodLength: Int,
-        onBirthControl: Boolean, locked: Boolean, photoPath: String?,
+        onBirthControl: Boolean, photoPath: String?,
     ) {
         viewModelScope.launch {
             val order = state.value.profiles.size
@@ -193,7 +194,6 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     defaultCycleLength = cycleLength,
                     defaultPeriodLength = periodLength,
                     onBirthControl = onBirthControl,
-                    locked = locked,
                     photoPath = photoPath,
                     sortOrder = order,
                 ),
@@ -205,7 +205,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** Saves edits to an existing profile, keeping its id and sort order. */
     fun updateProfile(
         original: Profile, name: String, color: Int, cycleLength: Int, periodLength: Int,
-        onBirthControl: Boolean, locked: Boolean, photoPath: String?,
+        onBirthControl: Boolean, photoPath: String?,
     ) {
         viewModelScope.launch {
             // 사진을 새로 골랐거나 지웠으면, 더 이상 안 쓰는 예전 파일을 정리한다.
@@ -219,7 +219,6 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     defaultCycleLength = cycleLength,
                     defaultPeriodLength = periodLength,
                     onBirthControl = onBirthControl,
-                    locked = locked,
                     photoPath = photoPath,
                 ),
             )
@@ -242,6 +241,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         db.profileDao().insert(
             Profile(name = "나", color = OloColors.ProfilePalette[0].toArgb(), sortOrder = 0),
         )
+    }
+
+    private companion object {
+        const val KEY_APP_LOCK = "app_lock"
     }
 }
 

@@ -56,6 +56,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kgcaudit.olocycle.auth.BiometricAuth
@@ -87,9 +91,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 @Composable
 private fun App(vm: HomeViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val unlocked by vm.unlocked.collectAsStateWithLifecycle()
-    // 잠금 판정은 (느린) 프로필 데이터 로드가 아니라 즉시 갱신되는 선택 id로 한다 → 잠긴 프로필이 잠깐 보이는 깜빡임 방지.
-    val selId by vm.selectedProfileId.collectAsStateWithLifecycle()
+    val appLockEnabled by vm.appLockEnabled.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as? FragmentActivity
     var tab by remember { mutableStateOf(Tab.HOME) }
@@ -99,31 +101,51 @@ private fun App(vm: HomeViewModel = viewModel()) {
     var recordDate by remember { mutableStateOf<LocalDate?>(null) }
     var showAbout by remember { mutableStateOf(false) }
 
-    // 잠금 대상 프로필: 선택 id로 프로필 목록에서 바로 찾는다(데이터 로드를 기다리지 않음).
-    val gateProfile = state.profiles.firstOrNull { it.id == selId } ?: state.profiles.firstOrNull()
-    val gated = gateProfile != null && gateProfile.locked && gateProfile.id !in unlocked
+    // 앱 잠금(프로필 무관, 앱 전체 1개). 첫 구동엔 잠긴 상태로 시작하고, 홈/타 앱으로 나갔다 오면 다시 잠근다.
+    var authed by rememberSaveable { mutableStateOf(false) }
+    var authInProgress by remember { mutableStateOf(false) }
+    val gated = appLockEnabled && !authed
+
+    // 앱이 화면에서 사라지면(ON_STOP) 다시 잠금. 인증창(기기 잠금)으로 잠깐 나간 경우는 제외.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && !authInProgress) authed = false
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    val requestUnlock: () -> Unit = req@{
+        val act = activity ?: return@req
+        authInProgress = true
+        BiometricAuth.authenticate(
+            act, title = "OLO Cycle 잠금 해제", subtitle = "생체인증 또는 화면 잠금으로 확인",
+            onSuccess = { authInProgress = false; authed = true },
+            onError = { msg -> authInProgress = false; Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() },
+        )
+    }
+    // 잠금 상태가 되면(첫 구동·복귀) 인증창을 자동으로 띄운다. 취소하면 잠금 화면의 버튼으로 다시 시도.
+    LaunchedEffect(gated) { if (gated) requestUnlock() }
+
+    if (gated) {
+        AppLockGate(onUnlock = requestUnlock)
+        return
+    }
+
     // 화면 강조(버튼 등)는 클레이(역할색). 링·달력은 프로필 색(정체성)으로 물들여 "누구 달력"인지 보이게 한다.
-    val profileColor = (gateProfile ?: state.selected)?.let { Color(it.color) } ?: OloColors.Primary
+    val profileColor = state.selected?.let { Color(it.color) } ?: OloColors.Primary
 
     Column(Modifier.fillMaxSize().background(OloColors.Background)) {
         HeaderBar(
             profiles = state.profiles,
-            selectedId = gateProfile?.id,
+            selectedId = state.selected?.id,
             onSelect = vm::select,
             onAdd = { showAdd = true },
-            onEdit = { (gateProfile ?: state.selected)?.let { editProfile = it } },
+            onEdit = { state.selected?.let { editProfile = it } },
         )
         Box(Modifier.weight(1f)) {
-            if (gated && gateProfile != null) {
-                LockGate(gateProfile, profileColor) {
-                    val act = activity ?: return@LockGate
-                    BiometricAuth.authenticate(
-                        act, title = "${gateProfile.name} 프로필 잠금 해제", subtitle = "생체인증 또는 화면 잠금으로 확인",
-                        onSuccess = { vm.unlock(gateProfile.id) },
-                        onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() },
-                    )
-                }
-            } else when (tab) {
+            when (tab) {
                 Tab.HOME -> HomeTab(state, profileColor, visibleMonth,
                     onPrevMonth = { visibleMonth = visibleMonth.minusMonths(1) },
                     onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
@@ -132,6 +154,15 @@ private fun App(vm: HomeViewModel = viewModel()) {
                 Tab.RECORD -> RecordTab(state) { recordDate = it }
                 Tab.STATS -> StatsTab(state, profileColor)
                 Tab.SETTINGS -> SettingsTab(state,
+                    appLockEnabled = appLockEnabled,
+                    onToggleAppLock = { on ->
+                        if (on && !BiometricAuth.canAuthenticate(context)) {
+                            Toast.makeText(context, "기기 화면 잠금(생체/PIN)을 먼저 설정해 주세요.", Toast.LENGTH_LONG).show()
+                        } else {
+                            vm.setAppLock(on)
+                            if (on) authed = true // 방금 켠 사람은 이번 세션은 계속 열어 둔다(다음 복귀부터 잠김).
+                        }
+                    },
                     onEditProfile = { editProfile = it },
                     onAbout = { showAbout = true })
             }
@@ -143,8 +174,8 @@ private fun App(vm: HomeViewModel = viewModel()) {
         ProfileEditorDialog(
             original = null,
             onDismiss = { showAdd = false },
-            onSave = { name, color, cycle, period, birth, locked, photo ->
-                vm.addProfile(name, color, cycle, period, birth, locked, photo); showAdd = false
+            onSave = { name, color, cycle, period, birth, photo ->
+                vm.addProfile(name, color, cycle, period, birth, photo); showAdd = false
             },
             onDelete = null,
         )
@@ -153,10 +184,8 @@ private fun App(vm: HomeViewModel = viewModel()) {
         ProfileEditorDialog(
             original = profile,
             onDismiss = { editProfile = null },
-            onSave = { name, color, cycle, period, birth, locked, photo ->
-                vm.updateProfile(profile, name, color, cycle, period, birth, locked, photo)
-                // 방금 잠금을 켰다면(직전에 인증 의사 확인) 지금 보고 있는 세션은 계속 열어 둔다.
-                if (locked) vm.unlock(profile.id)
+            onSave = { name, color, cycle, period, birth, photo ->
+                vm.updateProfile(profile, name, color, cycle, period, birth, photo)
                 editProfile = null
             },
             onDelete = if (state.profiles.size > 1) { { vm.deleteProfile(profile); editProfile = null } } else null,
@@ -195,7 +224,6 @@ private fun HeaderBar(
                 profile = p, size = 38.dp,
                 modifier = Modifier.padding(start = 8.dp).clickable { onSelect(p.id) },
                 borderColor = if (p.id == selectedId) Color.White else Color.White.copy(alpha = 0.45f),
-                showLock = true,
             )
         }
         Box(
@@ -243,7 +271,6 @@ private fun ProfileAvatar(
     modifier: Modifier = Modifier,
     borderColor: Color? = null,
     borderWidth: Dp = 2.dp,
-    showLock: Boolean = false,
 ) {
     val bmp = rememberProfileBitmap(profile.photoPath)
     Box(
@@ -256,26 +283,21 @@ private fun ProfileAvatar(
         } else {
             Text(profile.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.38f).sp)
         }
-        if (showLock && profile.locked) {
-            Box(
-                Modifier.align(Alignment.BottomEnd).size(size * 0.37f).clip(CircleShape).background(OloColors.Surface),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Default.Lock, "잠김", tint = OloColors.Muted, modifier = Modifier.size(size * 0.24f)) }
-        }
     }
 }
 
 @Composable
-private fun LockGate(profile: Profile, accent: Color, onUnlock: () -> Unit) {
+private fun AppLockGate(onUnlock: () -> Unit) {
     Column(
-        Modifier.fillMaxSize().padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxSize().background(OloColors.Background).padding(40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(Modifier.size(84.dp).clip(CircleShape).background(accent.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Lock, null, tint = accent, modifier = Modifier.size(38.dp))
+        Box(Modifier.size(84.dp).clip(CircleShape).background(OloColors.AccentContainer), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Lock, null, tint = OloColors.Primary, modifier = Modifier.size(38.dp))
         }
         Spacer(Modifier.height(16.dp))
-        Text("${profile.name} 프로필이 잠겨 있습니다", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = OloColors.Ink)
+        Text("OLO Cycle 잠금", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = OloColors.Ink)
         Spacer(Modifier.height(4.dp))
         Text("생체인증 또는 화면 잠금으로 확인하세요.", color = OloColors.Muted, fontSize = 13.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(20.dp))
@@ -622,10 +644,12 @@ private fun Kpi(modifier: Modifier, value: String, label: String) {
 @Composable
 private fun SettingsTab(
     state: HomeState,
+    appLockEnabled: Boolean,
+    onToggleAppLock: (Boolean) -> Unit,
     onEditProfile: (Profile) -> Unit,
     onAbout: () -> Unit,
 ) {
-    // 설정에는 앱 전체 공통 항목만 둔다. 이름·색·사진·주기·잠금 같은 개인별 설정은 각 프로필(편집창)에 있다.
+    // 설정에는 앱 전체 공통 항목만 둔다. 이름·색·사진·주기 같은 개인별 설정은 각 프로필(편집창)에 있다.
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SectionTitle("설정 · 개인정보", "앱 전체 공통 항목")
         // 프라이버시 안내를 최상단에.
@@ -638,15 +662,23 @@ private fun SettingsTab(
                 }
             }
         }
+        // 앱 잠금(앱 전체 공통). 켜면 첫 구동·복귀 때마다 인증을 요구한다.
+        Row(Modifier.fillMaxWidth().padding(20.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("앱 잠금", fontWeight = FontWeight.SemiBold, color = OloColors.Ink)
+                Text("앱을 열 때·다른 앱에서 돌아올 때 생체인증/PIN을 요구합니다", color = OloColors.Muted, fontSize = 12.sp)
+            }
+            Switch(appLockEnabled, onToggleAppLock)
+        }
+        HorizontalDivider(color = OloColors.Line)
         SettingRow("구성원 관리") {}
-        Text("이름·사진·색상·주기·잠금은 각 구성원을 눌러 프로필에서 설정합니다.",
+        Text("이름·사진·색상·주기는 각 구성원을 눌러 프로필에서 설정합니다.",
             Modifier.padding(24.dp, 0.dp, 24.dp, 6.dp), color = OloColors.Muted, fontSize = 12.sp)
         state.profiles.forEach { p ->
             Row(Modifier.fillMaxWidth().clickable { onEditProfile(p) }.padding(24.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 ProfileAvatar(p, size = 32.dp)
                 Spacer(Modifier.width(12.dp))
                 Text(p.name, Modifier.weight(1f), color = OloColors.Ink)
-                if (p.locked) Icon(Icons.Default.Lock, "잠김", tint = OloColors.Muted, modifier = Modifier.size(16.dp))
                 Icon(Icons.Default.ChevronRight, "편집", tint = OloColors.Muted)
             }
         }
@@ -709,7 +741,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
 private fun ProfileEditorDialog(
     original: Profile?,
     onDismiss: () -> Unit,
-    onSave: (name: String, color: Int, cycle: Int, period: Int, birthControl: Boolean, locked: Boolean, photoPath: String?) -> Unit,
+    onSave: (name: String, color: Int, cycle: Int, period: Int, birthControl: Boolean, photoPath: String?) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
     var name by remember { mutableStateOf(original?.name ?: "") }
@@ -719,7 +751,6 @@ private fun ProfileEditorDialog(
     var cycle by remember { mutableStateOf(original?.defaultCycleLength ?: 28) }
     var period by remember { mutableStateOf(original?.defaultPeriodLength ?: 5) }
     var birthControl by remember { mutableStateOf(original?.onBirthControl ?: false) }
-    var locked by remember { mutableStateOf(original?.locked ?: false) }
     var photoPath by remember { mutableStateOf(original?.photoPath) }
     var confirmDelete by remember { mutableStateOf(false) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -739,7 +770,7 @@ private fun ProfileEditorDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = { onSave(name, OloColors.ProfilePalette[colorIndex].toArgb(), cycle, period, birthControl, locked, photoPath) }) {
+            TextButton(onClick = { onSave(name, OloColors.ProfilePalette[colorIndex].toArgb(), cycle, period, birthControl, photoPath) }) {
                 Text(if (original == null) "만들기" else "저장")
             }
         },
@@ -786,14 +817,6 @@ private fun ProfileEditorDialog(
                 Stepper("평균 생리 기간(일)", period, 1, 10) { period = it }
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("피임약 복용", Modifier.weight(1f), fontSize = 13.sp); Switch(birthControl, { birthControl = it })
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("프로필 잠금(생체인증/PIN)", Modifier.weight(1f), fontSize = 13.sp)
-                    Switch(locked, { on ->
-                        if (on && !BiometricAuth.canAuthenticate(ctx)) {
-                            android.widget.Toast.makeText(ctx, "기기 화면 잠금(생체/PIN)을 먼저 설정해 주세요.", android.widget.Toast.LENGTH_LONG).show()
-                        } else locked = on
-                    })
                 }
                 if (onDelete != null) {
                     Spacer(Modifier.height(8.dp))
