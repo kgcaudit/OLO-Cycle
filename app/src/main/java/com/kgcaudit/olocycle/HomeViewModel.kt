@@ -32,11 +32,18 @@ data class HomeState(
     val dayRecords: Map<LocalDate, DayRecord> = emptyMap(),
     val prediction: CyclePrediction? = null,
     val daysUntilNextPeriod: Int? = null,
+    val params: CycleParams? = null,
+    /** 1-based day of the current cycle (오늘이 주기 며칠째), or null with no history. */
+    val cycleDayIndex: Int? = null,
+    /** Recent cycle lengths (days between starts), oldest→newest, for stats. */
+    val recentCycleLengths: List<Int> = emptyList(),
     val today: LocalDate = LocalDate.now(),
 ) {
     /** Phase for [day], derived on demand so the calendar can color each cell. */
     fun phaseOf(day: LocalDate): Phase =
         prediction?.let { CyclePredictor.phaseOf(day, it) } ?: Phase.UNKNOWN
+
+    fun currentPhase(): Phase = phaseOf(today)
 
     fun isPeriodStart(day: LocalDate): Boolean = day in periodStarts
 
@@ -47,6 +54,12 @@ data class HomeState(
         it.flow != null || !it.symptoms.isNullOrBlank() || !it.mood.isNullOrBlank() ||
             it.temperature != null || !it.memo.isNullOrBlank()
     } ?: false
+
+    /** Whether prediction runs on personal averages yet (vs. defaults). */
+    val isPersonalized: Boolean get() = periodStarts.size >= CyclePredictor.MIN_STARTS_FOR_AVERAGE
+
+    /** Days logged for this profile, newest first. */
+    fun loggedDays(): List<DayRecord> = dayRecords.values.sortedByDescending { it.date }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -94,6 +107,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             ),
         )
         val prediction = CyclePredictor.currentCycle(startDates, params, today)
+        val cycleDayIndex = prediction?.let { it.periodStart.until(today).days + 1 }
+        val gaps = startDates.sorted().zipWithNext { a, b -> a.until(b).days }
+            .filter { it in CycleParams.MIN_CYCLE..CycleParams.MAX_CYCLE }
         return HomeState(
             profiles = list,
             selected = selected,
@@ -101,6 +117,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             dayRecords = records.associateBy { it.date },
             prediction = prediction,
             daysUntilNextPeriod = prediction?.let { CyclePredictor.daysUntilNextPeriod(it, today) },
+            params = params,
+            cycleDayIndex = cycleDayIndex,
+            recentCycleLengths = gaps.takeLast(CyclePredictor.AVERAGE_WINDOW),
             today = today,
         )
     }
