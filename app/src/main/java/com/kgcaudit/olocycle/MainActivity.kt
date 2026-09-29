@@ -294,56 +294,53 @@ private fun App(vm: HomeViewModel = viewModel()) {
 // ---------------------------------------------------------------------------- top member switcher + bottom bar
 
 /**
- * 최상단 고정 구성원 스위처(모든 화면 공통 앵커). 상단에 화면 제목 + 편집(현재 구성원)·설정 ⚙,
- * 아래에 구성원 아바타 줄(활성은 크게·색 링, 나머지는 작게). 눌러서 전환, ＋로 추가.
+ * 최상단 고정 구성원 스위처(모든 화면 공통 앵커) — 한 줄 사각형 바.
+ * 제목 오른쪽에 사각 타일: 활성은 색 배경+2글자 이름으로 확장, 비활성은 사각 아바타 아이콘만. ＋추가, ✎편집, ⚙설정.
  */
 @Composable
 private fun MemberSwitcher(
     title: String, profiles: List<Profile>, selectedId: Long?,
     onSelect: (Long) -> Unit, onAdd: () -> Unit, onEditCurrent: () -> Unit, onSettings: () -> Unit,
 ) {
-    // 컴팩트한 상단 바: 제목 + 아바타 줄을 붙여 올려 아래 콘텐츠 공간을 넉넉히 확보한다.
     Column(Modifier.fillMaxWidth().background(OloColors.Surface).statusBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().padding(18.dp, 6.dp, 4.dp, 0.dp),
+            Modifier.fillMaxWidth().padding(16.dp, 8.dp, 4.dp, 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(title, Modifier.weight(1f), color = OloColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-            if (selectedId != null) {
-                IconButton(onEditCurrent, Modifier.size(40.dp)) { Icon(Icons.Default.Edit, "현재 구성원 편집", tint = OloColors.Muted, modifier = Modifier.size(20.dp)) }
-            }
-            IconButton(onSettings, Modifier.size(40.dp)) { Icon(Icons.Default.Settings, "설정", tint = OloColors.Muted, modifier = Modifier.size(20.dp)) }
-        }
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp, 0.dp, 16.dp, 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            profiles.forEach { p ->
-                val on = p.id == selectedId
-                Column(
-                    Modifier.clickable { onSelect(p.id) },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    ProfileAvatar(
-                        profile = p, size = if (on) 44.dp else 34.dp,
-                        modifier = if (on) Modifier else Modifier.graphicsLayer { alpha = 0.6f },
-                        borderColor = if (on) Color(p.color) else null, borderWidth = 2.5.dp,
-                    )
-                    Text(p.name, fontSize = 10.5.sp, maxLines = 1,
-                        color = if (on) OloColors.Ink else OloColors.Muted,
-                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
-                }
-            }
-            Column(
-                Modifier.clickable(onClick = onAdd), horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+            Text(title, color = OloColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            Spacer(Modifier.width(10.dp))
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(34.dp).clip(CircleShape).border(2.dp, OloColors.Outline, CircleShape),
-                    contentAlignment = Alignment.Center) { Icon(Icons.Default.Add, "구성원 추가", tint = OloColors.Outline, modifier = Modifier.size(18.dp)) }
-                Text("추가", fontSize = 10.5.sp, color = OloColors.Muted)
+                profiles.forEach { p ->
+                    val on = p.id == selectedId
+                    if (on) {
+                        Row(
+                            Modifier.clip(RoundedCornerShape(10.dp)).background(Color(p.color).copy(alpha = 0.16f))
+                                .clickable { onSelect(p.id) }.padding(4.dp, 4.dp, 11.dp, 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ProfileAvatar(p, size = 30.dp, square = true)
+                            Spacer(Modifier.width(7.dp))
+                            Text(avatarInitials(p.name), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OloColors.Ink, maxLines = 1)
+                        }
+                    } else {
+                        ProfileAvatar(p, size = 32.dp, square = true,
+                            modifier = Modifier.graphicsLayer { alpha = 0.82f }.clickable { onSelect(p.id) })
+                    }
+                }
+                Box(
+                    Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).border(1.6.dp, OloColors.Outline, RoundedCornerShape(9.dp))
+                        .clickable(onClick = onAdd),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Default.Add, "구성원 추가", tint = OloColors.Outline, modifier = Modifier.size(18.dp)) }
             }
+            if (selectedId != null) {
+                IconButton(onEditCurrent, Modifier.size(38.dp)) { Icon(Icons.Default.Edit, "현재 구성원 편집", tint = OloColors.Muted, modifier = Modifier.size(19.dp)) }
+            }
+            IconButton(onSettings, Modifier.size(38.dp)) { Icon(Icons.Default.Settings, "설정", tint = OloColors.Muted, modifier = Modifier.size(19.dp)) }
         }
         HorizontalDivider(color = OloColors.Line)
     }
@@ -352,25 +349,23 @@ private fun MemberSwitcher(
 /** 하단 4탭 + 가운데 ＋기록 FAB. 탭은 좌2·우2로 나뉘고 FAB가 중앙에 떠 있다. */
 @Composable
 private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onFab: () -> Unit) {
-    Box(Modifier.fillMaxWidth()) {
-        Column {
-            HorizontalDivider(color = OloColors.Line)
-            Row(Modifier.fillMaxWidth().background(OloColors.Surface).navigationBarsPadding().height(64.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                NavItem(Modifier.weight(1f), Tab.HOME, current, onSelect)
-                NavItem(Modifier.weight(1f), Tab.CALENDAR, current, onSelect)
-                Spacer(Modifier.width(72.dp)) // FAB 자리
-                NavItem(Modifier.weight(1f), Tab.RECORD, current, onSelect)
-                NavItem(Modifier.weight(1f), Tab.STATS, current, onSelect)
+    // 중앙 ＋ 를 바 위로 띄우지 않고 바 안(중앙 슬롯)에 넣어, 위 콘텐츠와 겹치지 않게 한다.
+    Column {
+        HorizontalDivider(color = OloColors.Line)
+        Row(Modifier.fillMaxWidth().background(OloColors.Surface).navigationBarsPadding().height(64.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            NavItem(Modifier.weight(1f), Tab.HOME, current, onSelect)
+            NavItem(Modifier.weight(1f), Tab.CALENDAR, current, onSelect)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(48.dp).shadow(4.dp, CircleShape).clip(CircleShape)
+                        .background(OloColors.Primary).clickable(onClick = onFab),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Default.Add, "기록 추가", tint = Color.White, modifier = Modifier.size(26.dp)) }
             }
+            NavItem(Modifier.weight(1f), Tab.RECORD, current, onSelect)
+            NavItem(Modifier.weight(1f), Tab.STATS, current, onSelect)
         }
-        // 바 위쪽 경계에 반쯤 걸치도록 띄운 도킹 FAB(그림자로 떠 있는 느낌).
-        Box(
-            Modifier.align(Alignment.TopCenter).offset(y = (-27).dp).size(56.dp)
-                .shadow(8.dp, CircleShape).clip(CircleShape)
-                .background(OloColors.Primary).clickable(onClick = onFab),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Default.Add, "기록 추가", tint = Color.White, modifier = Modifier.size(26.dp)) }
     }
 }
 
@@ -385,6 +380,19 @@ private fun NavItem(modifier: Modifier, tab: Tab, current: Tab, onSelect: (Tab) 
         Spacer(Modifier.height(3.dp))
         Text(tab.label, fontSize = 11.sp, color = if (on) OloColors.Primary else OloColors.Muted,
             fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+/**
+ * 사각 아바타에 넣을 글자: 최소 2자. 한국 성명 관습(성1+이름2, 남궁·황보 등 복성)에서 이름은 보통 끝 2자이므로
+ * 3자 이상이면 끝 2자(이름), 2자 이하면 그대로. (예: 김하늘→"하늘", 남궁민수→"민수", 김철→"김철", 정→"정")
+ */
+private fun avatarInitials(name: String): String {
+    val n = name.trim()
+    return when {
+        n.isEmpty() -> "?"
+        n.length <= 2 -> n
+        else -> n.takeLast(2)
     }
 }
 
@@ -404,17 +412,22 @@ private fun ProfileAvatar(
     modifier: Modifier = Modifier,
     borderColor: Color? = null,
     borderWidth: Dp = 2.dp,
+    square: Boolean = false,
 ) {
     val bmp = rememberProfileBitmap(profile.photoPath)
+    val shape = if (square) RoundedCornerShape(size * 0.24f) else CircleShape
     Box(
-        modifier.size(size).clip(CircleShape).background(Color(profile.color))
-            .then(if (borderColor != null) Modifier.border(borderWidth, borderColor, CircleShape) else Modifier),
+        modifier.size(size).clip(shape).background(Color(profile.color))
+            .then(if (borderColor != null) Modifier.border(borderWidth, borderColor, shape) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         if (bmp != null) {
             Image(bmp, contentDescription = profile.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         } else {
-            Text(profile.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.38f).sp)
+            // 사각 타일은 2글자(성명 관습: 성1+이름2 → 이름 끝 2자), 원형은 1글자.
+            val label = if (square) avatarInitials(profile.name) else profile.name.take(1)
+            Text(label, color = Color.White, fontWeight = FontWeight.Bold,
+                fontSize = (size.value * (if (square && label.length >= 2) 0.30f else 0.38f)).sp, maxLines = 1)
         }
     }
 }
@@ -627,7 +640,7 @@ private fun CalendarTab(
                         state::calendarCellLabel, enabled = state.selected != null, onDayClick = onDayClick, fillHeight = true)
                 }
             }
-            Box(Modifier.padding(bottom = 30.dp)) { PhaseLegend() }
+            Box(Modifier.padding(bottom = 8.dp)) { PhaseLegend() }
         } else {
             YearView(
                 year = visibleMonth.year, today = state.today, profileColor = profileColor,
@@ -689,7 +702,7 @@ private fun YearView(
                 }
             }
         }
-        Box(Modifier.padding(bottom = 30.dp)) { PhaseLegend() }
+        Box(Modifier.padding(bottom = 8.dp)) { PhaseLegend() }
     }
 }
 
