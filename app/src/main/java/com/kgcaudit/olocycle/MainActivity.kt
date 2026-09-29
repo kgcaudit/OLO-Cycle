@@ -302,20 +302,21 @@ private fun MemberSwitcher(
     title: String, profiles: List<Profile>, selectedId: Long?,
     onSelect: (Long) -> Unit, onAdd: () -> Unit, onEditCurrent: () -> Unit, onSettings: () -> Unit,
 ) {
+    // 컴팩트한 상단 바: 제목 + 아바타 줄을 붙여 올려 아래 콘텐츠 공간을 넉넉히 확보한다.
     Column(Modifier.fillMaxWidth().background(OloColors.Surface).statusBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().padding(18.dp, 12.dp, 6.dp, 2.dp),
+            Modifier.fillMaxWidth().padding(18.dp, 6.dp, 4.dp, 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(title, Modifier.weight(1f), color = OloColors.Ink, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+            Text(title, Modifier.weight(1f), color = OloColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
             if (selectedId != null) {
-                IconButton(onEditCurrent) { Icon(Icons.Default.Edit, "현재 구성원 편집", tint = OloColors.Muted) }
+                IconButton(onEditCurrent, Modifier.size(40.dp)) { Icon(Icons.Default.Edit, "현재 구성원 편집", tint = OloColors.Muted, modifier = Modifier.size(20.dp)) }
             }
-            IconButton(onSettings) { Icon(Icons.Default.Settings, "설정", tint = OloColors.Muted) }
+            IconButton(onSettings, Modifier.size(40.dp)) { Icon(Icons.Default.Settings, "설정", tint = OloColors.Muted, modifier = Modifier.size(20.dp)) }
         }
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp, 2.dp, 16.dp, 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp, 0.dp, 16.dp, 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
             profiles.forEach { p ->
@@ -323,25 +324,25 @@ private fun MemberSwitcher(
                 Column(
                     Modifier.clickable { onSelect(p.id) },
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     ProfileAvatar(
-                        profile = p, size = if (on) 48.dp else 38.dp,
+                        profile = p, size = if (on) 44.dp else 34.dp,
                         modifier = if (on) Modifier else Modifier.graphicsLayer { alpha = 0.6f },
-                        borderColor = if (on) Color(p.color) else null, borderWidth = 3.dp,
+                        borderColor = if (on) Color(p.color) else null, borderWidth = 2.5.dp,
                     )
-                    Text(p.name, fontSize = 11.sp, maxLines = 1,
+                    Text(p.name, fontSize = 10.5.sp, maxLines = 1,
                         color = if (on) OloColors.Ink else OloColors.Muted,
                         fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
                 }
             }
             Column(
                 Modifier.clickable(onClick = onAdd), horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Box(Modifier.size(38.dp).clip(CircleShape).border(2.dp, OloColors.Outline, CircleShape),
-                    contentAlignment = Alignment.Center) { Icon(Icons.Default.Add, "구성원 추가", tint = OloColors.Outline) }
-                Text("추가", fontSize = 11.sp, color = OloColors.Muted)
+                Box(Modifier.size(34.dp).clip(CircleShape).border(2.dp, OloColors.Outline, CircleShape),
+                    contentAlignment = Alignment.Center) { Icon(Icons.Default.Add, "구성원 추가", tint = OloColors.Outline, modifier = Modifier.size(18.dp)) }
+                Text("추가", fontSize = 10.5.sp, color = OloColors.Muted)
             }
         }
         HorizontalDivider(color = OloColors.Line)
@@ -570,15 +571,17 @@ private fun WeekStrip(state: HomeState, profileColor: Color, onOpenCalendar: () 
 
 // ---------------------------------------------------------------------------- calendar tab
 
-/** 달력 = 독립 전체화면 탭: 큰 월간 달력 + 범례. 제목 탭 → 연·월 피커, 그리드 좌우 스와이프 → 월 이동. */
+private enum class CalMode { MONTH, YEAR }
+
+/** 달력 탭: 월/연 전환. 월=큰 달력(칸 정보·스와이프·연월 피커), 연=12개월 패턴 한눈 보기. */
 @Composable
 private fun CalendarTab(
     state: HomeState, profileColor: Color, visibleMonth: YearMonth,
     onSetMonth: (YearMonth) -> Unit, onDayClick: (LocalDate) -> Unit,
 ) {
+    var mode by remember { mutableStateOf(CalMode.MONTH) }
     var showPicker by remember { mutableStateOf(false) }
     val density = LocalDensity.current
-    // 월이 바뀌면 이동 방향에서 달력이 슬라이드해 들어온다.
     val gridOffset = remember { Animatable(0f) }
     var lastMonth by remember { mutableStateOf(visibleMonth) }
     LaunchedEffect(visibleMonth) {
@@ -589,42 +592,142 @@ private fun CalendarTab(
             gridOffset.animateTo(0f, tween(260))
         }
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Box(Modifier.padding(start = 16.dp, top = 12.dp).height(4.dp).width(46.dp).clip(RoundedCornerShape(3.dp)).background(profileColor))
-        MonthHeader(
-            visibleMonth, profileColor,
-            onPrev = { onSetMonth(visibleMonth.minusMonths(1)) },
-            onNext = { onSetMonth(visibleMonth.plusMonths(1)) },
-            onTitleClick = { showPicker = true },
-            onToday = { onSetMonth(YearMonth.now()) },
-        )
-        Box(
-            Modifier.fillMaxWidth().pointerInput(visibleMonth) {
-                val threshold = 56.dp.toPx()
-                var total = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { total = 0f },
-                    onDragEnd = {
-                        if (total <= -threshold) onSetMonth(visibleMonth.plusMonths(1))       // ← 다음 달
-                        else if (total >= threshold) onSetMonth(visibleMonth.minusMonths(1))  // → 이전 달
-                    },
-                ) { change, dragAmount -> total += dragAmount; change.consume() }
-            },
-        ) {
-            Box(Modifier.graphicsLayer { translationX = gridOffset.value }) {
-                MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::recordOf,
-                    enabled = state.selected != null, onDayClick = onDayClick)
+    Column(Modifier.fillMaxSize()) {
+        // 상단 줄: 색 악센트 + 월/연 세그먼트 토글.
+        Row(Modifier.fillMaxWidth().padding(16.dp, 10.dp, 16.dp, 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.height(4.dp).width(46.dp).clip(RoundedCornerShape(3.dp)).background(profileColor))
+            Spacer(Modifier.weight(1f))
+            SegToggle(listOf("월", "연"), if (mode == CalMode.MONTH) 0 else 1, profileColor) {
+                mode = if (it == 0) CalMode.MONTH else CalMode.YEAR
             }
         }
-        PhaseLegend()
-        Text("표를 좌우로 밀어 달을 넘길 수 있어요. 예측은 참고용 추정치이며 피임·진단의 근거가 아닙니다.",
-            Modifier.fillMaxWidth().padding(16.dp), color = OloColors.Muted, fontSize = 11.sp, textAlign = TextAlign.Center)
+        if (mode == CalMode.MONTH) {
+            MonthHeader(
+                visibleMonth, profileColor,
+                onPrev = { onSetMonth(visibleMonth.minusMonths(1)) },
+                onNext = { onSetMonth(visibleMonth.plusMonths(1)) },
+                onTitleClick = { showPicker = true },
+                onToday = { onSetMonth(YearMonth.now()) },
+            )
+            Box(
+                Modifier.fillMaxWidth().weight(1f).pointerInput(visibleMonth) {
+                    val threshold = 56.dp.toPx()
+                    var total = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { total = 0f },
+                        onDragEnd = {
+                            if (total <= -threshold) onSetMonth(visibleMonth.plusMonths(1))
+                            else if (total >= threshold) onSetMonth(visibleMonth.minusMonths(1))
+                        },
+                    ) { change, dragAmount -> total += dragAmount; change.consume() }
+                },
+            ) {
+                Box(Modifier.fillMaxSize().graphicsLayer { translationX = gridOffset.value }) {
+                    MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::recordOf,
+                        state::calendarCellLabel, enabled = state.selected != null, onDayClick = onDayClick, fillHeight = true)
+                }
+            }
+            Box(Modifier.padding(bottom = 30.dp)) { PhaseLegend() }
+        } else {
+            YearView(
+                year = visibleMonth.year, today = state.today, profileColor = profileColor,
+                phaseOf = state::phaseOf,
+                onPrevYear = { onSetMonth(visibleMonth.minusYears(1)) },
+                onNextYear = { onSetMonth(visibleMonth.plusYears(1)) },
+                onToday = { onSetMonth(YearMonth.now()) },
+                onPickMonth = { m -> onSetMonth(YearMonth.of(visibleMonth.year, m)); mode = CalMode.MONTH },
+            )
+        }
     }
     if (showPicker) {
         MonthYearPickerDialog(visibleMonth, profileColor, state.today,
             onPick = { onSetMonth(it); showPicker = false },
             onDismiss = { showPicker = false })
     }
+}
+
+/** 작은 세그먼트 토글(월/연 등). */
+@Composable
+private fun SegToggle(items: List<String>, selected: Int, accent: Color, onSelect: (Int) -> Unit) {
+    Row(Modifier.clip(RoundedCornerShape(9.dp)).background(OloColors.SurfaceSoft).padding(2.dp)) {
+        items.forEachIndexed { i, label ->
+            val on = i == selected
+            Box(
+                Modifier.clip(RoundedCornerShape(7.dp)).background(if (on) accent else Color.Transparent)
+                    .clickable { onSelect(i) }.padding(horizontal = 16.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text(label, color = if (on) Color.White else OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+/** 연(年) 달력: 12개월을 3열로 채워 생리/예측/가임/배란 패턴을 한눈에. 월을 누르면 그 달의 월간 달력으로. */
+@Composable
+private fun YearView(
+    year: Int, today: LocalDate, profileColor: Color, phaseOf: (LocalDate) -> Phase,
+    onPrevYear: () -> Unit, onNextYear: () -> Unit, onToday: () -> Unit, onPickMonth: (Int) -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(16.dp, 4.dp, 8.dp, 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${year}년", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = profileColor)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onToday, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                Text("올해", color = OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+            IconButton(onPrevYear) { Icon(Icons.Default.ChevronLeft, "이전 해", tint = OloColors.Muted) }
+            IconButton(onNextYear) { Icon(Icons.Default.ChevronRight, "다음 해", tint = OloColors.Muted) }
+        }
+        Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)) {
+            (0..3).forEach { row ->
+                Row(Modifier.fillMaxWidth().weight(1f)) {
+                    (1..3).forEach { col ->
+                        val m = row * 3 + col
+                        Box(Modifier.weight(1f).fillMaxHeight().padding(5.dp)) {
+                            MiniMonth(YearMonth.of(year, m), today, profileColor, phaseOf) { onPickMonth(m) }
+                        }
+                    }
+                }
+            }
+        }
+        Box(Modifier.padding(bottom = 30.dp)) { PhaseLegend() }
+    }
+}
+
+/** 연 달력의 한 달 미니 그리드. */
+@Composable
+private fun MiniMonth(month: YearMonth, today: LocalDate, profileColor: Color, phaseOf: (LocalDate) -> Phase, onClick: () -> Unit) {
+    val leading = month.atDay(1).dayOfWeek.value % 7
+    val cells = (0 until leading).map<Int, LocalDate?> { null } + (1..month.lengthOfMonth()).map { month.atDay(it) }
+    Column(
+        Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(OloColors.Surface)
+            .border(1.dp, OloColors.Line, RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(6.dp, 5.dp),
+    ) {
+        Text("${month.monthValue}월", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = profileColor)
+        Spacer(Modifier.height(3.dp))
+        Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(1.5.dp)) {
+            cells.chunked(7).forEach { week ->
+                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(1.5.dp)) {
+                    week.forEach { day ->
+                        val c = if (day == null) Color.Transparent else miniColor(phaseOf(day))
+                        Box(
+                            Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(c)
+                                .then(if (day == today) Modifier.border(1.dp, profileColor, RoundedCornerShape(2.dp)) else Modifier),
+                        )
+                    }
+                    repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+/** 연 달력용 단계별 채움색(작은 칸이라 진한 원색 대신 톤을 통일). */
+private fun miniColor(phase: Phase): Color = when (phase) {
+    Phase.PERIOD -> OloColors.Period
+    Phase.PREDICTED_PERIOD -> OloColors.PeriodLight
+    Phase.FERTILE -> OloColors.FertileLight
+    Phase.OVULATION -> OloColors.Ovulation
+    else -> Color(0x11000000)
 }
 
 /** 연·월 직접 선택: 연도 스테퍼 + 12개월 그리드. 선택 월·이번 달을 강조. */
@@ -715,13 +818,16 @@ private fun MonthHeader(
 private fun MonthCalendar(
     month: YearMonth, today: LocalDate, profileColor: Color,
     phaseOf: (LocalDate) -> Phase, recordOf: (LocalDate) -> com.kgcaudit.olocycle.data.DayRecord?,
-    enabled: Boolean, onDayClick: (LocalDate) -> Unit,
+    labelOf: (LocalDate) -> String?,
+    enabled: Boolean, onDayClick: (LocalDate) -> Unit, fillHeight: Boolean = false,
 ) {
     val first = month.atDay(1)
     val leading = first.dayOfWeek.value % 7
     val cells = (0 until leading).map<Int, LocalDate?> { null } + (1..month.lengthOfMonth()).map { month.atDay(it) }
     Column(
-        Modifier.padding(horizontal = 14.dp).clip(RoundedCornerShape(16.dp))
+        Modifier.then(if (fillHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+            .padding(horizontal = 14.dp, vertical = if (fillHeight) 4.dp else 0.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(profileColor.copy(alpha = 0.05f))
             .border(2.dp, profileColor.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
             .padding(8.dp),
@@ -734,10 +840,10 @@ private fun MonthCalendar(
         }
         Spacer(Modifier.height(4.dp))
         cells.chunked(7).forEach { week ->
-            Row(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().then(if (fillHeight) Modifier.weight(1f) else Modifier)) {
                 week.forEach { day ->
-                    Box(Modifier.weight(1f).padding(3.dp)) {
-                        if (day != null) DayCell(day, day == today, profileColor, phaseOf(day), recordOf(day), enabled, onDayClick)
+                    Box(Modifier.weight(1f).then(if (fillHeight) Modifier.fillMaxHeight() else Modifier).padding(3.dp)) {
+                        if (day != null) DayCell(day, day == today, profileColor, phaseOf(day), recordOf(day), labelOf(day), enabled, onDayClick, fillHeight)
                     }
                 }
                 repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
@@ -749,12 +855,12 @@ private fun MonthCalendar(
 @Composable
 private fun DayCell(
     day: LocalDate, isToday: Boolean, profileColor: Color, phase: Phase,
-    record: com.kgcaudit.olocycle.data.DayRecord?, enabled: Boolean, onClick: (LocalDate) -> Unit,
+    record: com.kgcaudit.olocycle.data.DayRecord?, label: String?, enabled: Boolean, onClick: (LocalDate) -> Unit, fill: Boolean = false,
 ) {
     val (bg, fg) = phaseColors(phase)
     val shape = RoundedCornerShape(10.dp)
     Box(
-        Modifier.fillMaxWidth().aspectRatio(1f).clip(shape).background(bg)
+        (if (fill) Modifier.fillMaxSize() else Modifier.fillMaxWidth().aspectRatio(1f)).clip(shape).background(bg)
             // 예측 생리 = 점선 테두리(Apple·Flo 관습), 배란 = ◯ 고리, 오늘 = 프로필 색 실선.
             .drawBehind {
                 val stroke = 2.dp.toPx()
@@ -764,7 +870,7 @@ private fun DayCell(
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
                     )
                     Phase.OVULATION -> {
-                        val r = size.minDimension * 0.34f
+                        val r = size.minDimension * 0.30f
                         drawCircle(OloColors.Ovulation, r, style = Stroke(stroke))
                     }
                     else -> {}
@@ -775,10 +881,14 @@ private fun DayCell(
                 )
             }
             .clickable(enabled = enabled) { onClick(day) },
-        contentAlignment = Alignment.Center,
     ) {
-        Text("${day.dayOfMonth}", color = fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.align(Alignment.Center))
+        // 위: 날짜 + 짧은 라벨(생리 N일 / 예정 / 배란), 아래: 기록 점.
+        Column(Modifier.align(Alignment.TopCenter).padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("${day.dayOfMonth}", color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 15.sp)
+            if (label != null) {
+                Text(label, color = fg.copy(alpha = 0.9f), fontSize = 8.5.sp, fontWeight = FontWeight.Bold, lineHeight = 9.sp, maxLines = 1)
+            }
+        }
         DayMarkers(record, Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp))
     }
 }
@@ -941,6 +1051,29 @@ private fun StatsTab(state: HomeState, profileColor: Color) {
                         color = OloColors.OnAccentContainer, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
                     Text("배란 예정 ${it.ovulation.monthValue}/${it.ovulation.dayOfMonth} · 가임기 ${it.fertileStart.monthValue}/${it.fertileStart.dayOfMonth}~${it.fertileEnd.dayOfMonth}",
                         color = OloColors.Muted, fontSize = 12.sp)
+                }
+            }
+        }
+
+        // 주기 히스토리 표: 기록된 생리 구간과 그 주기 길이(최근 것부터).
+        val history = state.periodHistory()
+        if (history.isNotEmpty()) {
+            Text("주기 히스토리", Modifier.padding(20.dp, 8.dp, 20.dp, 6.dp), color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(12.dp))) {
+                Row(Modifier.fillMaxWidth().background(OloColors.SurfaceSoft).padding(14.dp, 9.dp)) {
+                    Text("생리 구간 (기간)", Modifier.weight(1f), color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("주기", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                history.take(12).forEach { h ->
+                    val days = (h.end.toEpochDay() - h.start.toEpochDay() + 1).toInt()
+                    Row(Modifier.fillMaxWidth().padding(14.dp, 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "%02d.%02d ~ %02d.%02d (%d일)".format(h.start.monthValue, h.start.dayOfMonth, h.end.monthValue, h.end.dayOfMonth, days),
+                            Modifier.weight(1f), color = OloColors.Ink, fontSize = 13.sp,
+                        )
+                        Text(h.cycleLength?.let { "${it}일" } ?: "—", color = OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    HorizontalDivider(color = OloColors.Line)
                 }
             }
         }

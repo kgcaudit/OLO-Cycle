@@ -32,7 +32,7 @@ object OloColors {
     val Ovulation = Color(0xFF55606B)
     val OvulationLight = Color(0xFFDEE2E6)
     val Pms = Color(0xFFB07A8E)         // 웜 모브
-    val PmsLight = Color(0xFFEDE0E5)
+    val PmsLight = Color(0xFFF5ECF0)    // 생리 직전 구간(더 연한 모브 틴트)
     val Amber = Color(0xFFC79A3C)       // 증상 표시(달력 칸 기호)
 
     /**

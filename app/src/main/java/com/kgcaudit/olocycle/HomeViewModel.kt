@@ -51,6 +51,40 @@ data class HomeState(
 
     fun isPeriodStart(day: LocalDate): Boolean = day in periodStarts
 
+    /** 1-based day within its recorded period (생리 며칠째), or null when [day] is not a recorded period day. */
+    fun periodDayNumber(day: LocalDate): Int? {
+        val len = params?.periodLength ?: return null
+        val start = periodStarts
+            .filter { !it.isAfter(day) && day.isBefore(it.plusDays(len.toLong())) }
+            .maxOrNull() ?: return null
+        return (day.toEpochDay() - start.toEpochDay() + 1).toInt()
+    }
+
+    /** 달력 칸에 얹을 짧은 라벨: 생리 진행 일수 / 예정 / 배란. (가임은 색으로 충분해 라벨 생략) */
+    fun calendarCellLabel(day: LocalDate): String? = when (phaseOf(day)) {
+        Phase.PERIOD -> periodDayNumber(day)?.let { "${it}일" }
+        Phase.PREDICTED_PERIOD -> "예정"
+        Phase.OVULATION -> "배란"
+        else -> null
+    }
+
+    /**
+     * 주기 히스토리(최근 것부터): 각 기록 생리 시작일 → 예상 종료일(시작+생리기간−1)과 다음 시작까지의 주기 길이.
+     * 마지막(가장 최근) 항목은 다음 시작이 없으므로 주기 길이 null.
+     */
+    fun periodHistory(): List<CycleHistoryItem> {
+        val len = params?.periodLength ?: 5
+        val sorted = periodStarts.distinct().sorted()
+        return sorted.mapIndexed { i, start ->
+            val next = sorted.getOrNull(i + 1)
+            CycleHistoryItem(
+                start = start,
+                end = start.plusDays((len - 1).toLong()),
+                cycleLength = next?.let { (it.toEpochDay() - start.toEpochDay()).toInt() },
+            )
+        }.reversed()
+    }
+
     fun recordOf(day: LocalDate): DayRecord? = dayRecords[day]
 
     /** True when the day carries any log entry the calendar should mark with a dot. */
@@ -65,6 +99,9 @@ data class HomeState(
     /** Days logged for this profile, newest first. */
     fun loggedDays(): List<DayRecord> = dayRecords.values.sortedByDescending { it.date }
 }
+
+/** One row of the cycle-history table: a recorded period and the cycle length that followed it. */
+data class CycleHistoryItem(val start: LocalDate, val end: LocalDate, val cycleLength: Int?)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
