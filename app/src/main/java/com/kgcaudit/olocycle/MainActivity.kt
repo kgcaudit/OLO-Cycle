@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -244,8 +245,7 @@ private fun App(vm: HomeViewModel = viewModel()) {
                         onLogToday = { recordDate = state.today },
                         onOpenCalendar = { tab = Tab.CALENDAR })
                     Tab.CALENDAR -> CalendarTab(state, profileColor, visibleMonth,
-                        onPrevMonth = { visibleMonth = visibleMonth.minusMonths(1) },
-                        onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
+                        onSetMonth = { visibleMonth = it },
                         onDayClick = { recordDate = it })
                     Tab.RECORD -> RecordTab(state) { recordDate = it }
                     Tab.STATS -> StatsTab(state, profileColor)
@@ -570,21 +570,111 @@ private fun WeekStrip(state: HomeState, profileColor: Color, onOpenCalendar: () 
 
 // ---------------------------------------------------------------------------- calendar tab
 
-/** 달력 = 독립 전체화면 탭: 큰 월간 달력 + 범례. */
+/** 달력 = 독립 전체화면 탭: 큰 월간 달력 + 범례. 제목 탭 → 연·월 피커, 그리드 좌우 스와이프 → 월 이동. */
 @Composable
 private fun CalendarTab(
     state: HomeState, profileColor: Color, visibleMonth: YearMonth,
-    onPrevMonth: () -> Unit, onNextMonth: () -> Unit, onDayClick: (LocalDate) -> Unit,
+    onSetMonth: (YearMonth) -> Unit, onDayClick: (LocalDate) -> Unit,
 ) {
+    var showPicker by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    // 월이 바뀌면 이동 방향에서 달력이 슬라이드해 들어온다.
+    val gridOffset = remember { Animatable(0f) }
+    var lastMonth by remember { mutableStateOf(visibleMonth) }
+    LaunchedEffect(visibleMonth) {
+        if (visibleMonth != lastMonth) {
+            val dir = if (visibleMonth.isAfter(lastMonth)) 1 else -1
+            lastMonth = visibleMonth
+            gridOffset.snapTo(with(density) { 64.dp.toPx() } * dir)
+            gridOffset.animateTo(0f, tween(260))
+        }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Box(Modifier.padding(start = 16.dp, top = 12.dp).height(4.dp).width(46.dp).clip(RoundedCornerShape(3.dp)).background(profileColor))
-        MonthHeader(visibleMonth, profileColor, onPrevMonth, onNextMonth)
-        MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::recordOf,
-            enabled = state.selected != null, onDayClick = onDayClick)
+        MonthHeader(
+            visibleMonth, profileColor,
+            onPrev = { onSetMonth(visibleMonth.minusMonths(1)) },
+            onNext = { onSetMonth(visibleMonth.plusMonths(1)) },
+            onTitleClick = { showPicker = true },
+            onToday = { onSetMonth(YearMonth.now()) },
+        )
+        Box(
+            Modifier.fillMaxWidth().pointerInput(visibleMonth) {
+                val threshold = 56.dp.toPx()
+                var total = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { total = 0f },
+                    onDragEnd = {
+                        if (total <= -threshold) onSetMonth(visibleMonth.plusMonths(1))       // ← 다음 달
+                        else if (total >= threshold) onSetMonth(visibleMonth.minusMonths(1))  // → 이전 달
+                    },
+                ) { change, dragAmount -> total += dragAmount; change.consume() }
+            },
+        ) {
+            Box(Modifier.graphicsLayer { translationX = gridOffset.value }) {
+                MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::recordOf,
+                    enabled = state.selected != null, onDayClick = onDayClick)
+            }
+        }
         PhaseLegend()
-        Text("예측은 참고용 추정치이며 피임·진단의 근거가 아닙니다.",
+        Text("표를 좌우로 밀어 달을 넘길 수 있어요. 예측은 참고용 추정치이며 피임·진단의 근거가 아닙니다.",
             Modifier.fillMaxWidth().padding(16.dp), color = OloColors.Muted, fontSize = 11.sp, textAlign = TextAlign.Center)
     }
+    if (showPicker) {
+        MonthYearPickerDialog(visibleMonth, profileColor, state.today,
+            onPick = { onSetMonth(it); showPicker = false },
+            onDismiss = { showPicker = false })
+    }
+}
+
+/** 연·월 직접 선택: 연도 스테퍼 + 12개월 그리드. 선택 월·이번 달을 강조. */
+@Composable
+private fun MonthYearPickerDialog(
+    month: YearMonth, accent: Color, today: LocalDate,
+    onPick: (YearMonth) -> Unit, onDismiss: () -> Unit,
+) {
+    var year by remember { mutableStateOf(month.year) }
+    val thisMonth = YearMonth.from(today)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton({ year-- }) { Icon(Icons.Default.ChevronLeft, "이전 해", tint = OloColors.Muted) }
+                Text("${year}년", Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = OloColors.Ink)
+                IconButton({ year++ }) { Icon(Icons.Default.ChevronRight, "다음 해", tint = OloColors.Muted) }
+            }
+        },
+        text = {
+            Column {
+                (0..2).forEach { row ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        (1..4).forEach { col ->
+                            val m = row * 4 + col
+                            val ym = YearMonth.of(year, m)
+                            val selected = ym == month
+                            val isThis = ym == thisMonth
+                            Box(
+                                Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp))
+                                    .background(if (selected) accent else OloColors.SurfaceSoft)
+                                    .then(if (isThis && !selected) Modifier.border(1.5.dp, accent, RoundedCornerShape(12.dp)) else Modifier)
+                                    .clickable { onPick(ym) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("${m}월", fontSize = 14.sp,
+                                    fontWeight = if (selected || isThis) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) Color.White else OloColors.Ink)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = { onPick(thisMonth) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text("이번 달로", color = accent, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+    )
 }
 
 private fun phaseName(p: Phase): String = when (p) {
@@ -599,10 +689,23 @@ private fun phaseName(p: Phase): String = when (p) {
 }
 
 @Composable
-private fun MonthHeader(month: YearMonth, profileColor: Color, onPrev: () -> Unit, onNext: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(20.dp, 4.dp, 12.dp, 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("${month.year}년 ${month.monthValue}월", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = profileColor)
+private fun MonthHeader(
+    month: YearMonth, profileColor: Color,
+    onPrev: () -> Unit, onNext: () -> Unit, onTitleClick: () -> Unit, onToday: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().padding(16.dp, 4.dp, 8.dp, 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        // 제목을 누르면 연·월 피커. 캐럿으로 눌러 고를 수 있음을 표시.
+        Row(
+            Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onTitleClick).padding(6.dp, 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("${month.year}년 ${month.monthValue}월", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = profileColor)
+            Icon(Icons.Default.ArrowDropDown, "연·월 선택", tint = profileColor, modifier = Modifier.size(22.dp))
+        }
         Spacer(Modifier.weight(1f))
+        TextButton(onClick = onToday, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+            Text("오늘", color = OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
         IconButton(onPrev) { Icon(Icons.Default.ChevronLeft, "이전 달", tint = OloColors.Muted) }
         IconButton(onNext) { Icon(Icons.Default.ChevronRight, "다음 달", tint = OloColors.Muted) }
     }
