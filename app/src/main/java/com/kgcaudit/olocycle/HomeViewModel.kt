@@ -98,10 +98,41 @@ data class HomeState(
 
     /** Days logged for this profile, newest first. */
     fun loggedDays(): List<DayRecord> = dayRecords.values.sortedByDescending { it.date }
+
+    /**
+     * 증상 인사이트: 기록된 증상별 빈도(기록일 대비 %)와 나타난 주기 수. 자주/반복/예측 표시에 쓴다.
+     * 로컬 계산만 하며 인터넷/서버가 필요 없다.
+     */
+    fun symptomStats(): List<SymptomStat> {
+        val records = dayRecords.values
+        if (records.isEmpty()) return emptyList()
+        val starts = periodStarts.distinct().sorted()
+        fun cycleIndexOf(d: LocalDate): Int = starts.count { !it.isAfter(d) } // 몇 번째 주기 구간인지(0=첫 기록 이전)
+        val counts = HashMap<String, Int>()
+        val cyclesBy = HashMap<String, MutableSet<Int>>()
+        records.forEach { r ->
+            val syms = r.symptoms?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.distinct().orEmpty()
+            val ci = cycleIndexOf(r.date)
+            syms.forEach { s ->
+                counts[s] = (counts[s] ?: 0) + 1
+                cyclesBy.getOrPut(s) { mutableSetOf() }.add(ci)
+            }
+        }
+        val denom = records.size.coerceAtLeast(1)
+        return counts.entries.map { (s, c) ->
+            SymptomStat(name = s, count = c, percent = (c * 100 / denom), cyclesSeen = cyclesBy[s]?.size ?: 0)
+        }.sortedByDescending { it.count }
+    }
+
+    /** 기록된 서로 다른 주기 구간 수(반복/예측 판단용). */
+    fun recordedCycleCount(): Int = periodStarts.distinct().size
 }
 
 /** One row of the cycle-history table: a recorded period and the cycle length that followed it. */
 data class CycleHistoryItem(val start: LocalDate, val end: LocalDate, val cycleLength: Int?)
+
+/** 증상 통계 한 줄: 증상명, 기록 횟수, 기록일 대비 %, 나타난 주기 수. */
+data class SymptomStat(val name: String, val count: Int, val percent: Int, val cyclesSeen: Int)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
