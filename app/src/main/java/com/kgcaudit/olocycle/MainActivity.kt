@@ -684,7 +684,7 @@ private fun phaseName(p: Phase): String = when (p) {
     Phase.FERTILE -> "가임기"
     Phase.OVULATION -> "배란기"
     Phase.LUTEAL -> "황체기"
-    Phase.PMS -> "황체기 · PMS"
+    Phase.PMS -> "황체기" // 생리 직전 며칠(색상은 유지하되 별도 문구 없이 황체기로 표기)
     Phase.UNKNOWN -> "기록 없음"
 }
 
@@ -827,16 +827,32 @@ private fun phaseColors(phase: Phase): Pair<Color, Color> = when (phase) {
     else -> Color.White to OloColors.Ink
 }
 
+/** 범례 — 각 칸을 실제 달력 칸의 축소판으로 그려 달력 색과 정확히 일치시킨다. */
 @Composable
 private fun PhaseLegend() {
-    val items = listOf("생리" to OloColors.Period, "가임기" to OloColors.Fertile, "배란" to OloColors.Ovulation, "PMS" to OloColors.Pms)
-    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        items.forEach { (label, color) ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(11.dp).clip(RoundedCornerShape(3.dp)).background(color))
-                Spacer(Modifier.width(5.dp)); Text(label, fontSize = 12.sp, color = OloColors.Muted)
-            }
-        }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        LegendItem("생리", OloColors.Period)                                   // 꽉 찬 로즈
+        LegendItem("예측", OloColors.PeriodLight, dashBorder = OloColors.Period) // 연분홍 + 점선
+        LegendItem("가임기", OloColors.FertileLight)                           // 연청록
+        LegendItem("배란", OloColors.OvulationLight, ring = OloColors.Ovulation) // 연회색 + 고리
+    }
+}
+
+/** 달력 칸과 같은 규칙(채움색·점선 테두리·배란 고리)으로 그린 범례 스와치. */
+@Composable
+private fun LegendItem(label: String, fill: Color, dashBorder: Color? = null, ring: Color? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(14.dp).clip(RoundedCornerShape(4.dp)).background(fill).drawBehind {
+                dashBorder?.let {
+                    drawRoundRect(it, style = Stroke(1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 3f))),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()))
+                }
+                ring?.let { drawCircle(it, size.minDimension * 0.34f, style = Stroke(1.6.dp.toPx())) }
+            },
+        )
+        Spacer(Modifier.width(5.dp)); Text(label, fontSize = 12.sp, color = OloColors.Muted)
     }
 }
 
