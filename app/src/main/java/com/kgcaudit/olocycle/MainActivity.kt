@@ -254,7 +254,7 @@ private fun App(vm: HomeViewModel = viewModel()) {
                 }
             }
         }
-        BottomBar(tab, onSelect = { tab = it }, onFab = { recordDate = state.today })
+        BottomBar(tab, profileColor, onSelect = { tab = it }, onFab = { recordDate = state.today })
     }
 
     if (showAdd) {
@@ -309,14 +309,19 @@ private fun MemberSwitcher(
             Modifier.fillMaxWidth().padding(16.dp, 8.dp, 4.dp, 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 제목: 앱 이름(연하게) + 화면 이름(진하게). 예) OLO Cycle 달력
-            Text(
-                buildAnnotatedString {
-                    withStyle(SpanStyle(color = OloColors.Muted, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)) { append("OLO Cycle ") }
-                    withStyle(SpanStyle(color = OloColors.Ink, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)) { append(tabLabel) }
-                },
-                maxLines = 1,
-            )
+            // 브랜드 워드마크(순환 고리 + OLO Cycle) 위, 화면 이름 아래 2단. 브랜드가 주인공, 화면명은 보조.
+            OloRingMark(size = 22.dp, color = OloColors.Primary)
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = OloColors.Primary, fontWeight = FontWeight.ExtraBold)) { append("OLO") }
+                        withStyle(SpanStyle(color = OloColors.Ink, fontWeight = FontWeight.ExtraBold)) { append(" Cycle") }
+                    },
+                    fontSize = 17.sp, lineHeight = 19.sp, maxLines = 1,
+                )
+                Text(tabLabel, color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, lineHeight = 12.sp, maxLines = 1)
+            }
             Spacer(Modifier.width(10.dp))
             Row(
                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -357,26 +362,37 @@ private fun MemberSwitcher(
     }
 }
 
-/** 하단 4탭 + 가운데 ＋기록 FAB. 탭은 좌2·우2로 나뉘고 FAB가 중앙에 떠 있다. */
+/** 앱 상징 '순환 고리' 마크 — 살짝 트인 원. 브랜드색(클레이)으로 헤더 워드마크 앞에 둔다. */
 @Composable
-private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onFab: () -> Unit) {
+private fun OloRingMark(size: Dp, color: Color) {
+    Canvas(Modifier.size(size)) {
+        val sw = size.toPx() * 0.18f
+        val r = (this.size.minDimension - sw) / 2f
+        val tl = Offset(center.x - r, center.y - r); val sz = Size(r * 2, r * 2)
+        drawArc(color, -48f, 300f, false, tl, sz, style = Stroke(sw, cap = StrokeCap.Round))
+    }
+}
+
+/** 하단 3탭 + 오른쪽 ＋기록. 활성 탭·FAB는 활성 구성원 색(B안 강조). */
+@Composable
+private fun BottomBar(current: Tab, accent: Color, onSelect: (Tab) -> Unit, onFab: () -> Unit) {
     // 3개 뷰 탭(오늘·달력·분석) + 오른쪽 끝에 기록 추가 ＋ 하나. 바 안에 두어 콘텐츠와 겹치지 않는다.
     Column {
         HorizontalDivider(color = OloColors.Line)
         Row(Modifier.fillMaxWidth().background(OloColors.Surface).navigationBarsPadding().height(64.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            NavItem(Modifier.weight(1f), Tab.HOME, current, onSelect)
-            NavItem(Modifier.weight(1f), Tab.CALENDAR, current, onSelect)
-            NavItem(Modifier.weight(1f), Tab.ANALYSIS, current, onSelect)
+            NavItem(Modifier.weight(1f), Tab.HOME, current, accent, onSelect)
+            NavItem(Modifier.weight(1f), Tab.CALENDAR, current, accent, onSelect)
+            NavItem(Modifier.weight(1f), Tab.ANALYSIS, current, accent, onSelect)
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Box(
                         Modifier.size(44.dp).shadow(4.dp, CircleShape).clip(CircleShape)
-                            .background(OloColors.Primary).clickable(onClick = onFab),
+                            .background(accent).clickable(onClick = onFab),
                         contentAlignment = Alignment.Center,
                     ) { Icon(Icons.Default.Add, "기록 추가", tint = Color.White, modifier = Modifier.size(24.dp)) }
                     Spacer(Modifier.height(2.dp))
-                    Text("기록", fontSize = 11.sp, color = OloColors.Primary, fontWeight = FontWeight.Bold)
+                    Text("기록", fontSize = 11.sp, color = accent, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -384,15 +400,15 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onFab: () -> Unit) 
 }
 
 @Composable
-private fun NavItem(modifier: Modifier, tab: Tab, current: Tab, onSelect: (Tab) -> Unit) {
+private fun NavItem(modifier: Modifier, tab: Tab, current: Tab, accent: Color, onSelect: (Tab) -> Unit) {
     val on = tab == current
     Column(
         modifier.clickable { onSelect(tab) }, horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(tab.icon, tab.label, tint = if (on) OloColors.Primary else OloColors.Muted, modifier = Modifier.size(22.dp))
+        Icon(tab.icon, tab.label, tint = if (on) accent else OloColors.Muted, modifier = Modifier.size(22.dp))
         Spacer(Modifier.height(3.dp))
-        Text(tab.label, fontSize = 11.sp, color = if (on) OloColors.Primary else OloColors.Muted,
+        Text(tab.label, fontSize = 11.sp, color = if (on) accent else OloColors.Muted,
             fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
     }
 }
@@ -481,8 +497,30 @@ private fun HomeDashboard(
         UpcomingCard(state, profileColor)
         Spacer(Modifier.height(12.dp))
         WeekStrip(state, profileColor, onOpenCalendar)
-        Text("예측은 참고용 추정치이며 피임·진단의 근거가 아닙니다.",
-            Modifier.fillMaxWidth().padding(vertical = 16.dp), color = OloColors.Muted, fontSize = 11.sp, textAlign = TextAlign.Center)
+        state.cycleDayIndex?.let { idx ->
+            Spacer(Modifier.height(12.dp))
+            CycleProgressCard(idx, state.params?.cycleLength ?: 28, phaseName(state.currentPhase()), profileColor)
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+/** 이번 주기 진행 — 홈 하단 여백 활용(면책 문구 자리). 진행 바는 활성 구성원 색. */
+@Composable
+private fun CycleProgressCard(dayIndex: Int, cycleLength: Int, phase: String, accent: Color) {
+    AccentCard(accent) {
+        Text("이번 주기 진행", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(9.dp))
+        val frac = (dayIndex.toFloat() / cycleLength).coerceIn(0f, 1f)
+        Box(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(7.dp)).background(OloColors.SurfaceSoft)) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(frac).clip(RoundedCornerShape(7.dp)).background(accent))
+        }
+        Spacer(Modifier.height(7.dp))
+        Row(Modifier.fillMaxWidth()) {
+            Text("$phase · ${dayIndex}일째", color = OloColors.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            Text("${cycleLength}일 주기", color = OloColors.Muted, fontSize = 12.sp)
+        }
     }
 }
 
@@ -1023,9 +1061,9 @@ private fun AnalysisTab(state: HomeState, profileColor: Color, onOpenDay: (Local
             else -> "불규칙"
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Kpi(Modifier.weight(1f), cycle?.let { "${it}일" } ?: "-", "평균 주기")
-            Kpi(Modifier.weight(1f), period?.let { "${it}일" } ?: "-", "평균 생리")
-            Kpi(Modifier.weight(1f), regularity, "규칙성")
+            Kpi(Modifier.weight(1f), cycle?.let { "${it}일" } ?: "-", "평균 주기", profileColor)
+            Kpi(Modifier.weight(1f), period?.let { "${it}일" } ?: "-", "평균 생리", profileColor)
+            Kpi(Modifier.weight(1f), regularity, "규칙성", profileColor)
         }
         if (!state.isPersonalized) {
             Text("생리 시작을 3회 이상 기록하면 개인 평균으로 예측이 정확해집니다.",
@@ -1058,6 +1096,7 @@ private fun AnalysisTab(state: HomeState, profileColor: Color, onOpenDay: (Local
                     FlowRowChips(
                         recurring.take(3).map { "반복 · ${it.name}(${it.cyclesSeen}주기)" } +
                             recurring.take(2).map { "예측 · 다음 주기 ${it.name} 가능" },
+                        profileColor,
                     )
                 }
             }
@@ -1086,12 +1125,12 @@ private fun AnalysisTab(state: HomeState, profileColor: Color, onOpenDay: (Local
         // 다음 예정
         state.prediction?.let {
             Spacer(Modifier.height(14.dp))
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = OloColors.AccentContainer)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = profileColor.copy(alpha = 0.10f))) {
                 Column(Modifier.padding(16.dp)) {
                     Text("다음 생리 예정", color = OloColors.Muted, fontSize = 12.sp)
                     Text("${it.nextPeriodStart.monthValue}월 ${it.nextPeriodStart.dayOfMonth}일" +
                         (state.daysUntilNextPeriod?.let { d -> " (D-$d)" } ?: ""),
-                        color = OloColors.OnAccentContainer, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                        color = OloColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
                     Text("배란 예정 ${it.ovulation.monthValue}/${it.ovulation.dayOfMonth} · 가임기 ${it.fertileStart.monthValue}/${it.fertileStart.dayOfMonth}~${it.fertileEnd.dayOfMonth}",
                         color = OloColors.Muted, fontSize = 12.sp)
                 }
@@ -1146,11 +1185,11 @@ private fun AnalysisTab(state: HomeState, profileColor: Color, onOpenDay: (Local
 /** 작은 칩 묶음(반복·예측 등). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FlowRowChips(labels: List<String>) {
+private fun FlowRowChips(labels: List<String>, accent: Color) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         labels.forEach { t ->
-            Text(t, Modifier.clip(RoundedCornerShape(8.dp)).background(OloColors.AccentContainer).padding(9.dp, 4.dp),
-                color = OloColors.OnAccentContainer, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+            Text(t, Modifier.clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = 0.12f)).padding(9.dp, 4.dp),
+                color = OloColors.Ink, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -1167,10 +1206,10 @@ private fun recordSummary(rec: com.kgcaudit.olocycle.data.DayRecord): String {
 }
 
 @Composable
-private fun Kpi(modifier: Modifier, value: String, label: String) {
+private fun Kpi(modifier: Modifier, value: String, label: String, accent: Color) {
     Column(modifier.clip(RoundedCornerShape(12.dp)).background(OloColors.SurfaceSoft).padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, color = OloColors.Primary, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+        Text(value, color = accent, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
         Text(label, color = OloColors.Muted, fontSize = 11.sp)
     }
 }
@@ -1477,19 +1516,19 @@ private fun DayRecordDialog(
             )
         }
 
-        FieldLabel("생리량", OloColors.Period)
+        FieldLabel("생리량")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             FLOW_LABELS.forEachIndexed { i, label ->
                 SelectChip(label, selected = flow == i, color = OloColors.Period) { flow = if (flow == i) null else i }
             }
         }
-        FieldLabel("증상", OloColors.Amber)
+        FieldLabel("증상")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             SYMPTOM_OPTIONS.forEach { s ->
                 SelectChip(s, selected = s in symptoms, color = OloColors.Amber) { if (s in symptoms) symptoms.remove(s) else symptoms.add(s) }
             }
         }
-        FieldLabel("기분", OloColors.Fertile)
+        FieldLabel("기분")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             MOOD_OPTIONS.forEach { m ->
                 SelectChip(m, selected = mood == m, color = OloColors.Fertile) { mood = if (mood == m) null else m }
@@ -1498,7 +1537,7 @@ private fun DayRecordDialog(
         FieldLabel("기초체온 (℃)")
         OutlinedTextField(temperature, { temperature = it }, singleLine = true, placeholder = { Text("예: 36.6") },
             modifier = Modifier.fillMaxWidth(), colors = oloFieldColors())
-        FieldLabel("메모", OloColors.Muted)
+        FieldLabel("메모")
         OutlinedTextField(memo, { memo = it }, modifier = Modifier.fillMaxWidth(), minLines = 3,
             placeholder = { Text("자유롭게 남겨요") }, colors = oloFieldColors())
         Spacer(Modifier.height(4.dp))

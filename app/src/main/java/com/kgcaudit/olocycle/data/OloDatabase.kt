@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [Profile::class, PeriodStart::class, DayRecord::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -29,10 +29,22 @@ abstract class OloDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3: 색 체계 개편. 구성원 팔레트의 틸(#3E7F80)이 새 가임기색(#5F8F86)과 충돌하므로,
+         * 그 색으로 저장된 기존 구성원을 더스티 블루(#5B6E86)로 옮긴다. 데이터는 그대로 보존.
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val oldTeal = 0xFF3E7F80.toInt()
+                val newBlue = 0xFF5B6E86.toInt()
+                db.execSQL("UPDATE profiles SET color = ? WHERE color = ?", arrayOf<Any>(newBlue, oldTeal))
+            }
+        }
+
         fun get(context: Context): OloDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, OloDatabase::class.java, "olo-cycle.db",
-            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
         }
     }
 }
