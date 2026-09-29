@@ -24,7 +24,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,7 +61,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -776,19 +778,21 @@ private fun MonthYearPickerDialog(
 ) {
     var year by remember { mutableStateOf(month.year) }
     val thisMonth = YearMonth.from(today)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton({ year-- }) { Icon(Icons.Default.ChevronLeft, "이전 해", tint = OloColors.Muted) }
-                Text("${year}년", Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = OloColors.Ink)
-                IconButton({ year++ }) { Icon(Icons.Default.ChevronRight, "다음 해", tint = OloColors.Muted) }
-            }
-        },
-        text = {
-            Column {
-                (0..2).forEach { row ->
+    OloDialog(
+        title = "연·월 선택",
+        onDismiss = onDismiss,
+        confirmLabel = "닫기",
+        onConfirm = onDismiss,
+        dismissLabel = null,
+        accent = accent,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton({ year-- }) { Icon(Icons.Default.ChevronLeft, "이전 해", tint = OloColors.Muted) }
+            Text("${year}년", Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = OloColors.Ink)
+            IconButton({ year++ }) { Icon(Icons.Default.ChevronRight, "다음 해", tint = OloColors.Muted) }
+        }
+        Spacer(Modifier.height(8.dp))
+        (0..2).forEach { row ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         (1..4).forEach { col ->
                             val m = row * 4 + col
@@ -810,12 +814,10 @@ private fun MonthYearPickerDialog(
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                TextButton(onClick = { onPick(thisMonth) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                    Text("이번 달로", color = accent, fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-    )
+        TextButton(onClick = { onPick(thisMonth) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("이번 달로", color = accent, fontWeight = FontWeight.Bold)
+        }
+    }
 }
 
 private fun phaseName(p: Phase): String = when (p) {
@@ -1251,28 +1253,68 @@ private fun SectionTitle(title: String, subtitle: String) {
     }
 }
 
+/**
+ * 앱 공통 다이얼로그 껍데기. 기본 Material AlertDialog는 표면색이 보라(라벤더) 계열로 떠서 OLO 웜톤과
+ * 어긋나고, text 슬롯의 높이 제약 때문에 내용이 길면 마지막 입력칸(예: 메모)이 잘린다. 그래서 직접
+ * [Dialog] + [Surface]로 구성한다: 제목은 상단 고정, 본문은 남는 높이만큼(최대 화면의 85%) 스크롤,
+ * 확인/취소 버튼은 하단 고정 → 어떤 내용이 와도 버튼과 마지막 칸이 항상 보인다. 색은 OLO 토큰만 사용.
+ */
 @Composable
-private fun EmptyHint(text: String) {
-    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-        Text(text, color = OloColors.Muted, fontSize = 14.sp, textAlign = TextAlign.Center)
+private fun OloDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    dismissLabel: String? = "취소",
+    accent: Color = OloColors.Primary,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = OloColors.Surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth(0.92f).heightIn(max = maxHeight),
+        ) {
+            Column(Modifier.padding(top = 22.dp, bottom = 10.dp)) {
+                Text(title, Modifier.padding(horizontal = 24.dp), color = OloColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                Spacer(Modifier.height(16.dp))
+                // 남는 높이만큼만 차지하고(fill=false) 그 안에서 스크롤 → 마지막 칸이 잘리지 않는다.
+                Column(
+                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
+                    content = content,
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    if (dismissLabel != null) {
+                        TextButton(onClick = onDismiss) { Text(dismissLabel, color = OloColors.Muted, fontWeight = FontWeight.SemiBold) }
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    TextButton(onClick = onConfirm) { Text(confirmLabel, color = accent, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun AboutDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("확인") } },
-        title = { Text("OLO Cycle ${BuildConfig.VERSION_NAME}") },
-        text = {
-            Text(
-                "가족 구성원별로 생리 주기를 따로 관리하는 앱입니다. 예측은 달력법 기반의 참고용 추정치이며 피임·진단의 근거가 아닙니다.\n\n" +
-                    "· 데이터는 이 기기에만 저장 · 인터넷 권한 없음\n" +
-                    "· 디자인: OLO 디자인 시스템 (Apache/MIT 오픈소스 기반)",
-                fontSize = 13.sp, lineHeight = 20.sp,
-            )
-        },
-    )
+    OloDialog(
+        title = "OLO Cycle ${BuildConfig.VERSION_NAME}",
+        onDismiss = onDismiss,
+        confirmLabel = "확인",
+        onConfirm = onDismiss,
+        dismissLabel = null,
+    ) {
+        Text(
+            "가족 구성원별로 생리 주기를 따로 관리하는 앱입니다. 예측은 달력법 기반의 참고용 추정치이며 피임·진단의 근거가 아닙니다.\n\n" +
+                "· 데이터는 이 기기에만 저장 · 인터넷 권한 없음\n" +
+                "· 디자인: OLO 디자인 시스템 (Apache/MIT 오픈소스 기반)",
+            color = OloColors.Ink, fontSize = 13.sp, lineHeight = 20.sp,
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------- dialogs (프로필 편집 · 일별 기록)
@@ -1311,17 +1353,12 @@ private fun ProfileEditorDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = { onSave(name, OloColors.ProfilePalette[colorIndex].toArgb(), cycle, period, birthControl, photoPath) }) {
-                Text(if (original == null) "만들기" else "저장")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
-        title = { Text(if (original == null) "구성원 추가" else "프로필 편집") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+    OloDialog(
+        title = if (original == null) "구성원 추가" else "구성원 편집",
+        onDismiss = onDismiss,
+        confirmLabel = if (original == null) "만들기" else "저장",
+        onConfirm = { onSave(name, OloColors.ProfilePalette[colorIndex].toArgb(), cycle, period, birthControl, photoPath) },
+    ) {
                 // 사진: 있으면 미리보기, 없으면 색+이니셜. 선택/제거 버튼을 옆에.
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val previewBmp = rememberProfileBitmap(photoPath)
@@ -1348,9 +1385,10 @@ private fun ProfileEditorDialog(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(name, { name = it }, label = { Text("이름(별명)") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text("이름(별명)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(), colors = oloFieldColors())
                 Spacer(Modifier.height(12.dp))
-                Text("프로필 색상", fontSize = 12.sp, color = OloColors.Muted)
+                Text("구성원 색상", fontSize = 12.sp, color = OloColors.Muted)
                 Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OloColors.ProfilePalette.forEachIndexed { i, c ->
                         Box(Modifier.size(30.dp).clip(CircleShape).background(c)
@@ -1367,7 +1405,7 @@ private fun ProfileEditorDialog(
                 if (onDelete != null) {
                     Spacer(Modifier.height(8.dp))
                     if (!confirmDelete) {
-                        TextButton(onClick = { confirmDelete = true }) { Text("이 프로필 삭제", color = OloColors.Period) }
+                        TextButton(onClick = { confirmDelete = true }) { Text("이 구성원 삭제", color = OloColors.Period) }
                     } else {
                         Text("이 구성원의 모든 기록이 함께 삭제됩니다.", color = OloColors.Period, fontSize = 12.sp)
                         Row {
@@ -1376,9 +1414,7 @@ private fun ProfileEditorDialog(
                         }
                     }
                 }
-            }
-        },
-    )
+    }
 }
 
 @Composable
@@ -1416,50 +1452,70 @@ private fun DayRecordDialog(
     var temperature by remember { mutableStateOf(existing?.temperature?.toString() ?: "") }
     var memo by remember { mutableStateOf(existing?.memo ?: "") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = {
-                onSetPeriodStart(periodStart)
-                onSave(flow, symptoms.toList(), mood, temperature.toDoubleOrNull(), memo)
-            }) { Text("저장") }
+    OloDialog(
+        title = "${date.monthValue}월 ${date.dayOfMonth}일 기록",
+        onDismiss = onDismiss,
+        confirmLabel = "저장",
+        onConfirm = {
+            onSetPeriodStart(periodStart)
+            onSave(flow, symptoms.toList(), mood, temperature.toDoubleOrNull(), memo)
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
-        title = { Text("${date.monthValue}월 ${date.dayOfMonth}일 기록") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("생리 시작일", Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Switch(periodStart, { periodStart = it })
-                }
-                Text("이 날을 생리 시작일로 지정하면 예측이 갱신됩니다.", color = OloColors.Muted, fontSize = 11.sp)
-
-                FieldLabel("생리량", OloColors.Period)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    FLOW_LABELS.forEachIndexed { i, label ->
-                        SelectChip(label, selected = flow == i, color = OloColors.Period) { flow = if (flow == i) null else i }
-                    }
-                }
-                FieldLabel("증상", OloColors.Amber)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    SYMPTOM_OPTIONS.forEach { s ->
-                        SelectChip(s, selected = s in symptoms, color = OloColors.Pms) { if (s in symptoms) symptoms.remove(s) else symptoms.add(s) }
-                    }
-                }
-                FieldLabel("기분", OloColors.Fertile)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    MOOD_OPTIONS.forEach { m ->
-                        SelectChip(m, selected = mood == m, color = OloColors.Fertile) { mood = if (mood == m) null else m }
-                    }
-                }
-                FieldLabel("기초체온 (℃)")
-                OutlinedTextField(temperature, { temperature = it }, singleLine = true, placeholder = { Text("예: 36.6") }, modifier = Modifier.fillMaxWidth())
-                FieldLabel("메모", OloColors.Muted)
-                OutlinedTextField(memo, { memo = it }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+    ) {
+        // 생리 시작일 토글: 켜면 예측 기준이 이 날로 갱신된다. 강조 카드로 다른 입력과 구분.
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(OloColors.AccentContainer)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("생리 시작일", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = OloColors.OnAccentContainer)
+                Text("켜면 이 날 기준으로 예측이 갱신돼요.", color = OloColors.OnAccentContainer.copy(alpha = 0.75f), fontSize = 11.sp)
             }
-        },
-    )
+            Switch(
+                periodStart, { periodStart = it },
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = OloColors.Primary),
+            )
+        }
+
+        FieldLabel("생리량", OloColors.Period)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            FLOW_LABELS.forEachIndexed { i, label ->
+                SelectChip(label, selected = flow == i, color = OloColors.Period) { flow = if (flow == i) null else i }
+            }
+        }
+        FieldLabel("증상", OloColors.Amber)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            SYMPTOM_OPTIONS.forEach { s ->
+                SelectChip(s, selected = s in symptoms, color = OloColors.Amber) { if (s in symptoms) symptoms.remove(s) else symptoms.add(s) }
+            }
+        }
+        FieldLabel("기분", OloColors.Fertile)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            MOOD_OPTIONS.forEach { m ->
+                SelectChip(m, selected = mood == m, color = OloColors.Fertile) { mood = if (mood == m) null else m }
+            }
+        }
+        FieldLabel("기초체온 (℃)")
+        OutlinedTextField(temperature, { temperature = it }, singleLine = true, placeholder = { Text("예: 36.6") },
+            modifier = Modifier.fillMaxWidth(), colors = oloFieldColors())
+        FieldLabel("메모", OloColors.Muted)
+        OutlinedTextField(memo, { memo = it }, modifier = Modifier.fillMaxWidth(), minLines = 3,
+            placeholder = { Text("자유롭게 남겨요") }, colors = oloFieldColors())
+        Spacer(Modifier.height(4.dp))
+    }
 }
+
+/** OutlinedTextField 공통 OLO 색상(기본 Material 보라 대신 클레이 강조·아이보리 배경). */
+@Composable
+private fun oloFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = OloColors.Primary,
+    unfocusedBorderColor = OloColors.Line,
+    cursorColor = OloColors.Primary,
+    focusedTextColor = OloColors.Ink,
+    unfocusedTextColor = OloColors.Ink,
+    focusedContainerColor = OloColors.Surface,
+    unfocusedContainerColor = OloColors.Surface,
+)
 
 @Composable
 private fun FieldLabel(text: String, dot: Color? = null) {
@@ -1471,7 +1527,7 @@ private fun FieldLabel(text: String, dot: Color? = null) {
 
 @Composable
 private fun SelectChip(label: String, selected: Boolean, color: Color, onClick: () -> Unit) {
-    val bg = if (selected) color else OloColors.Surface
+    val bg = if (selected) color else OloColors.SurfaceSoft
     val fg = if (selected) Color.White else OloColors.Ink
     Box(
         Modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, if (selected) color else OloColors.Line, RoundedCornerShape(16.dp))
