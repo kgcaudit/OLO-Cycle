@@ -63,8 +63,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -218,7 +221,7 @@ private fun App(vm: HomeViewModel = viewModel()) {
 
     Column(Modifier.fillMaxSize().background(OloColors.Background)) {
         MemberSwitcher(
-            title = if (tab == Tab.HOME) "OLO Cycle" else tab.label,
+            tabLabel = tab.label,
             profiles = state.profiles,
             selectedId = state.selected?.id,
             onSelect = vm::select,
@@ -299,7 +302,7 @@ private fun App(vm: HomeViewModel = viewModel()) {
  */
 @Composable
 private fun MemberSwitcher(
-    title: String, profiles: List<Profile>, selectedId: Long?,
+    tabLabel: String, profiles: List<Profile>, selectedId: Long?,
     onSelect: (Long) -> Unit, onAdd: () -> Unit, onEditCurrent: () -> Unit, onSettings: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().background(OloColors.Surface).statusBarsPadding()) {
@@ -307,7 +310,14 @@ private fun MemberSwitcher(
             Modifier.fillMaxWidth().padding(16.dp, 8.dp, 4.dp, 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(title, color = OloColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            // 제목: 앱 이름(연하게) + 화면 이름(진하게). 예) OLO Cycle 달력
+            Text(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = OloColors.Muted, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)) { append("OLO Cycle ") }
+                    withStyle(SpanStyle(color = OloColors.Ink, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)) { append(tabLabel) }
+                },
+                maxLines = 1,
+            )
             Spacer(Modifier.width(10.dp))
             Row(
                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -317,16 +327,19 @@ private fun MemberSwitcher(
                 profiles.forEach { p ->
                     val on = p.id == selectedId
                     if (on) {
+                        // 활성: 구성원 색 배경 칩 + 이름(사진이 있으면 사진도). 이름 중복 없이 한 번만.
+                        val hasPhoto = p.photoPath != null
                         Row(
-                            Modifier.clip(RoundedCornerShape(10.dp)).background(Color(p.color).copy(alpha = 0.16f))
-                                .clickable { onSelect(p.id) }.padding(4.dp, 4.dp, 11.dp, 4.dp),
+                            Modifier.clip(RoundedCornerShape(10.dp)).background(Color(p.color).copy(alpha = 0.18f))
+                                .clickable { onSelect(p.id) }
+                                .padding(start = if (hasPhoto) 4.dp else 12.dp, top = 5.dp, end = 12.dp, bottom = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ProfileAvatar(p, size = 30.dp, square = true)
-                            Spacer(Modifier.width(7.dp))
-                            Text(avatarInitials(p.name), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OloColors.Ink, maxLines = 1)
+                            if (hasPhoto) { ProfileAvatar(p, size = 28.dp, square = true); Spacer(Modifier.width(7.dp)) }
+                            Text(p.name, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = OloColors.Ink, maxLines = 1)
                         }
                     } else {
+                        // 비활성: 사각 아바타(사진 또는 색+2글자). 옆에 이름 없음 → 중복 없음.
                         ProfileAvatar(p, size = 32.dp, square = true,
                             modifier = Modifier.graphicsLayer { alpha = 0.82f }.clickable { onSelect(p.id) })
                     }
@@ -702,7 +715,20 @@ private fun YearView(
                 }
             }
         }
-        Box(Modifier.padding(bottom = 8.dp)) { PhaseLegend() }
+        // 연 달력은 미니 칸이 작아 배란을 고리 대신 채움색으로 쓰므로, 범례도 채움색으로 맞춘다.
+        Box(Modifier.padding(bottom = 8.dp)) { YearLegend() }
+    }
+}
+
+/** 연 달력용 범례 — 미니 칸의 실제 채움색과 1:1로 맞춘다(배란도 채움색). */
+@Composable
+private fun YearLegend() {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        LegendItem("생리", OloColors.Period)
+        LegendItem("예측", OloColors.PeriodLight)
+        LegendItem("가임기", OloColors.FertileLight)
+        LegendItem("배란", OloColors.Ovulation)
     }
 }
 
@@ -1242,11 +1268,13 @@ private fun ProfileEditorDialog(
                 // 사진: 있으면 미리보기, 없으면 색+이니셜. 선택/제거 버튼을 옆에.
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val previewBmp = rememberProfileBitmap(photoPath)
-                    Box(Modifier.size(64.dp).clip(CircleShape).background(OloColors.ProfilePalette[colorIndex]), contentAlignment = Alignment.Center) {
+                    // 홈 상단과 동일한 사각(라운드) 아바타. 이름은 관습대로 2글자.
+                    Box(Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(OloColors.ProfilePalette[colorIndex]), contentAlignment = Alignment.Center) {
                         if (previewBmp != null) {
                             Image(previewBmp, "프로필 사진", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                         } else {
-                            Text(name.take(1).ifBlank { "?" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                            Text(avatarInitials(name).ifBlank { "?" }, color = Color.White, fontWeight = FontWeight.Bold,
+                                fontSize = if (avatarInitials(name).length >= 2) 20.sp else 24.sp)
                         }
                     }
                     Spacer(Modifier.width(14.dp))
