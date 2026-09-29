@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
@@ -107,9 +108,9 @@ class MainActivity : FragmentActivity() {
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("홈", Icons.Default.Home),
+    CALENDAR("달력", Icons.Default.CalendarMonth),
     RECORD("기록", Icons.Default.Edit),
     STATS("통계", Icons.Default.BarChart),
-    SETTINGS("설정", Icons.Default.Settings),
 }
 
 @Composable
@@ -163,7 +164,27 @@ private fun App(vm: HomeViewModel = viewModel()) {
         return
     }
 
-    // 화면 강조(버튼 등)는 클레이(역할색). 링·달력은 프로필 색(정체성)으로 물들여 "누구 달력"인지 보이게 한다.
+    var showSettings by remember { mutableStateOf(false) }
+    // 설정은 앱 전역 → 탭이 아니라 우상단 ⚙ 로 진입하는 전체화면. 구성원 스위처를 띄우지 않는다.
+    if (showSettings) {
+        SettingsScreen(
+            appLockEnabled = appLockEnabled,
+            onToggleAppLock = { on ->
+                if (on && !BiometricAuth.canAuthenticate(context)) {
+                    Toast.makeText(context, "기기 화면 잠금(생체/PIN)을 먼저 설정해 주세요.", Toast.LENGTH_LONG).show()
+                } else {
+                    vm.setAppLock(on)
+                    if (on) authed = true
+                }
+            },
+            onAbout = { showAbout = true },
+            onBack = { showSettings = false },
+        )
+        if (showAbout) AboutDialog { showAbout = false }
+        return
+    }
+
+    // 링·달력·강조는 프로필 색(정체성)으로 물들여 "누구 화면"인지 보이게 한다.
     val profileColor = state.selected?.let { Color(it.color) } ?: OloColors.Primary
 
     // 좌우 스와이프로 구성원 이동: 왼쪽으로 밀면 다음, 오른쪽으로 밀면 이전 구성원.
@@ -194,12 +215,14 @@ private fun App(vm: HomeViewModel = viewModel()) {
     }
 
     Column(Modifier.fillMaxSize().background(OloColors.Background)) {
-        HeaderBar(
+        MemberSwitcher(
+            title = if (tab == Tab.HOME) "OLO Cycle" else tab.label,
             profiles = state.profiles,
             selectedId = state.selected?.id,
             onSelect = vm::select,
             onAdd = { showAdd = true },
-            onEdit = { state.selected?.let { editProfile = it } },
+            onEditCurrent = { state.selected?.let { editProfile = it } },
+            onSettings = { showSettings = true },
         )
         Box(
             Modifier.weight(1f).pointerInput(state.profiles, state.selected?.id) {
@@ -216,28 +239,19 @@ private fun App(vm: HomeViewModel = viewModel()) {
         ) {
             Box(Modifier.fillMaxSize().graphicsLayer { translationX = contentOffset.value; alpha = contentAlpha.value }) {
                 when (tab) {
-                    Tab.HOME -> HomeTab(state, profileColor, visibleMonth,
+                    Tab.HOME -> HomeDashboard(state, profileColor,
+                        onLogToday = { recordDate = state.today },
+                        onOpenCalendar = { tab = Tab.CALENDAR })
+                    Tab.CALENDAR -> CalendarTab(state, profileColor, visibleMonth,
                         onPrevMonth = { visibleMonth = visibleMonth.minusMonths(1) },
                         onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
-                        onDayClick = { recordDate = it },
-                        onLogToday = { recordDate = state.today })
-                    Tab.RECORD -> RecordTab(state, onSelectMember = vm::select) { recordDate = it }
-                    Tab.STATS -> StatsTab(state, profileColor, onSelectMember = vm::select)
-                    Tab.SETTINGS -> SettingsTab(state,
-                        appLockEnabled = appLockEnabled,
-                        onToggleAppLock = { on ->
-                            if (on && !BiometricAuth.canAuthenticate(context)) {
-                                Toast.makeText(context, "기기 화면 잠금(생체/PIN)을 먼저 설정해 주세요.", Toast.LENGTH_LONG).show()
-                            } else {
-                                vm.setAppLock(on)
-                                if (on) authed = true // 방금 켠 사람은 이번 세션은 계속 열어 둔다(다음 복귀부터 잠김).
-                            }
-                        },
-                        onAbout = { showAbout = true })
+                        onDayClick = { recordDate = it })
+                    Tab.RECORD -> RecordTab(state) { recordDate = it }
+                    Tab.STATS -> StatsTab(state, profileColor)
                 }
             }
         }
-        BottomNav(tab) { tab = it }
+        BottomBar(tab, onSelect = { tab = it }, onFab = { recordDate = state.today })
     }
 
     if (showAdd) {
@@ -276,52 +290,98 @@ private fun App(vm: HomeViewModel = viewModel()) {
     if (showAbout) AboutDialog { showAbout = false }
 }
 
-// ---------------------------------------------------------------------------- header + nav
+// ---------------------------------------------------------------------------- top member switcher + bottom bar
 
+/**
+ * 최상단 고정 구성원 스위처(모든 화면 공통 앵커). 상단에 화면 제목 + 편집(현재 구성원)·설정 ⚙,
+ * 아래에 구성원 아바타 줄(활성은 크게·색 링, 나머지는 작게). 눌러서 전환, ＋로 추가.
+ */
 @Composable
-private fun HeaderBar(
-    profiles: List<Profile>, selectedId: Long?,
-    onSelect: (Long) -> Unit, onAdd: () -> Unit, onEdit: () -> Unit,
+private fun MemberSwitcher(
+    title: String, profiles: List<Profile>, selectedId: Long?,
+    onSelect: (Long) -> Unit, onAdd: () -> Unit, onEditCurrent: () -> Unit, onSettings: () -> Unit,
 ) {
-    val gradient = Brush.horizontalGradient(listOf(lerp(OloColors.Primary, Color.Black, 0.06f), OloColors.Primary))
-    Row(
-        Modifier.fillMaxWidth().background(gradient).statusBarsPadding().padding(18.dp, 14.dp, 10.dp, 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("OLO Cycle", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-        profiles.forEach { p ->
-            ProfileAvatar(
-                profile = p, size = 38.dp,
-                modifier = Modifier.padding(start = 8.dp).clickable { onSelect(p.id) },
-                borderColor = if (p.id == selectedId) Color.White else Color.White.copy(alpha = 0.45f),
-            )
+    Column(Modifier.fillMaxWidth().background(OloColors.Surface).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(18.dp, 12.dp, 6.dp, 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, Modifier.weight(1f), color = OloColors.Ink, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+            if (selectedId != null) {
+                IconButton(onEditCurrent) { Icon(Icons.Default.Edit, "현재 구성원 편집", tint = OloColors.Muted) }
+            }
+            IconButton(onSettings) { Icon(Icons.Default.Settings, "설정", tint = OloColors.Muted) }
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp, 2.dp, 16.dp, 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            profiles.forEach { p ->
+                val on = p.id == selectedId
+                Column(
+                    Modifier.clickable { onSelect(p.id) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    ProfileAvatar(
+                        profile = p, size = if (on) 48.dp else 38.dp,
+                        modifier = if (on) Modifier else Modifier.graphicsLayer { alpha = 0.6f },
+                        borderColor = if (on) Color(p.color) else null, borderWidth = 3.dp,
+                    )
+                    Text(p.name, fontSize = 11.sp, maxLines = 1,
+                        color = if (on) OloColors.Ink else OloColors.Muted,
+                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+                }
+            }
+            Column(
+                Modifier.clickable(onClick = onAdd), horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Box(Modifier.size(38.dp).clip(CircleShape).border(2.dp, OloColors.Outline, CircleShape),
+                    contentAlignment = Alignment.Center) { Icon(Icons.Default.Add, "구성원 추가", tint = OloColors.Outline) }
+                Text("추가", fontSize = 11.sp, color = OloColors.Muted)
+            }
+        }
+        HorizontalDivider(color = OloColors.Line)
+    }
+}
+
+/** 하단 4탭 + 가운데 ＋기록 FAB. 탭은 좌2·우2로 나뉘고 FAB가 중앙에 떠 있다. */
+@Composable
+private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onFab: () -> Unit) {
+    Box(Modifier.fillMaxWidth()) {
+        Column {
+            HorizontalDivider(color = OloColors.Line)
+            Row(Modifier.fillMaxWidth().background(OloColors.Surface).navigationBarsPadding().height(64.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                NavItem(Modifier.weight(1f), Tab.HOME, current, onSelect)
+                NavItem(Modifier.weight(1f), Tab.CALENDAR, current, onSelect)
+                Spacer(Modifier.width(72.dp)) // FAB 자리
+                NavItem(Modifier.weight(1f), Tab.RECORD, current, onSelect)
+                NavItem(Modifier.weight(1f), Tab.STATS, current, onSelect)
+            }
         }
         Box(
-            Modifier.padding(start = 8.dp).size(38.dp).clip(CircleShape)
-                .border(2.dp, Color.White.copy(alpha = 0.6f), CircleShape).clickable(onClick = onAdd),
+            Modifier.align(Alignment.TopCenter).offset(y = (-20).dp).size(58.dp).clip(CircleShape)
+                .background(OloColors.Primary).border(4.dp, OloColors.Background, CircleShape)
+                .clickable(onClick = onFab),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Default.Add, "구성원 추가", tint = Color.White) }
-        if (selectedId != null) {
-            IconButton(onEdit) { Icon(Icons.Default.Edit, "프로필 편집", tint = Color.White) }
-        }
+        ) { Icon(Icons.Default.Add, "기록 추가", tint = Color.White, modifier = Modifier.size(28.dp)) }
     }
 }
 
 @Composable
-private fun BottomNav(current: Tab, onSelect: (Tab) -> Unit) {
-    Row(Modifier.fillMaxWidth().background(OloColors.Surface).navigationBarsPadding()) {
-        Tab.entries.forEach { t ->
-            val on = t == current
-            Column(
-                Modifier.weight(1f).clickable { onSelect(t) }.padding(vertical = 9.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icon(t.icon, t.label, tint = if (on) OloColors.Primary else OloColors.Muted, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.height(3.dp))
-                Text(t.label, fontSize = 11.sp, color = if (on) OloColors.Primary else OloColors.Muted,
-                    fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
-            }
-        }
+private fun NavItem(modifier: Modifier, tab: Tab, current: Tab, onSelect: (Tab) -> Unit) {
+    val on = tab == current
+    Column(
+        modifier.clickable { onSelect(tab) }, horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(tab.icon, tab.label, tint = if (on) OloColors.Primary else OloColors.Muted, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(3.dp))
+        Text(tab.label, fontSize = 11.sp, color = if (on) OloColors.Primary else OloColors.Muted,
+            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
     }
 }
 
@@ -377,85 +437,148 @@ private fun AppLockGate(onUnlock: () -> Unit) {
     }
 }
 
-// ---------------------------------------------------------------------------- home
+// ---------------------------------------------------------------------------- home (dashboard)
+
+/** 홈 = 대시보드: 상태 히어로 · 빠른 기록 · 다가오는 일정 · 이번 주 스트립. */
+@Composable
+private fun HomeDashboard(
+    state: HomeState, profileColor: Color, onLogToday: () -> Unit, onOpenCalendar: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+        Box(Modifier.padding(top = 14.dp).height(4.dp).width(46.dp).clip(RoundedCornerShape(3.dp)).background(profileColor))
+        Spacer(Modifier.height(12.dp))
+        HeroCard(state, profileColor)
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = onLogToday, enabled = state.selected != null,
+            colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary),
+            shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().height(48.dp),
+        ) { Icon(Icons.Default.Add, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp)); Text("오늘 기록", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+        Spacer(Modifier.height(12.dp))
+        UpcomingCard(state)
+        Spacer(Modifier.height(12.dp))
+        WeekStrip(state, profileColor, onOpenCalendar)
+        Text("예측은 참고용 추정치이며 피임·진단의 근거가 아닙니다.",
+            Modifier.fillMaxWidth().padding(vertical = 16.dp), color = OloColors.Muted, fontSize = 11.sp, textAlign = TextAlign.Center)
+    }
+}
+
+/** 상태 히어로 카드: 구성원 색 그라데이션 + 단계·D-day·다음 예정 + 미니 링. */
+@Composable
+private fun HeroCard(state: HomeState, profileColor: Color) {
+    val d = state.daysUntilNextPeriod
+    val cycle = state.params?.cycleLength ?: 28
+    Box(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+            .background(Brush.linearGradient(listOf(lerp(profileColor, Color.White, 0.12f), lerp(profileColor, Color.Black, 0.16f))))
+            .padding(18.dp),
+    ) {
+        Column(Modifier.fillMaxWidth(0.72f)) {
+            Text("● ${phaseName(state.currentPhase())}" + (state.cycleDayIndex?.let { " · 주기 ${it}일째" } ?: ""),
+                color = Color.White.copy(alpha = 0.92f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(when { d == null -> "기록 전"; d >= 0 -> "D-$d"; else -> "D+${-d}" },
+                color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 46.sp)
+            Text(state.prediction?.let { "다음 생리 ${it.nextPeriodStart.monthValue}/${it.nextPeriodStart.dayOfMonth} 예정" }
+                ?: "생리 시작일을 기록해 보세요", color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
+        }
+        Box(Modifier.align(Alignment.CenterEnd).size(74.dp)) {
+            Canvas(Modifier.fillMaxSize()) {
+                val sw = 7.dp.toPx()
+                val r = (size.minDimension - sw) / 2f
+                val tl = Offset(center.x - r, center.y - r); val sz = Size(r * 2, r * 2)
+                drawCircle(Color.White.copy(alpha = 0.28f), r, style = Stroke(sw))
+                state.cycleDayIndex?.let { idx ->
+                    drawArc(Color.White, -90f, (idx.toFloat() / cycle * 360f), false, tl, sz, style = Stroke(sw, cap = StrokeCap.Round))
+                    val ang = Math.toRadians((-90f + idx.toFloat() / cycle * 360f).toDouble())
+                    drawCircle(Color.White, 5.dp.toPx(), Offset(center.x + r * cos(ang).toFloat(), center.y + r * sin(ang).toFloat()))
+                }
+            }
+        }
+    }
+}
+
+/** 다가오는 일정: 다음 생리·배란·가임기와 각 D-day. */
+@Composable
+private fun UpcomingCard(state: HomeState) {
+    val pred = state.prediction ?: return
+    val today = state.today
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(OloColors.Surface)
+            .border(1.dp, OloColors.Line, RoundedCornerShape(14.dp)).padding(15.dp, 13.dp),
+    ) {
+        Text("다가오는 일정", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        UpcomingRow(OloColors.Period, "다음 생리", pred.nextPeriodStart, today)
+        UpcomingRow(OloColors.Ovulation, "배란", pred.ovulation, today)
+        UpcomingRow(OloColors.Fertile, "가임기", pred.fertileStart, today,
+            trailing = "${pred.fertileStart.monthValue}/${pred.fertileStart.dayOfMonth}~${pred.fertileEnd.dayOfMonth}")
+    }
+}
 
 @Composable
-private fun HomeTab(
+private fun UpcomingRow(color: Color, label: String, date: LocalDate, today: LocalDate, trailing: String? = null) {
+    val d = today.until(date).days
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(9.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.width(10.dp))
+        Text(label, color = OloColors.Ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(8.dp))
+        Text(trailing ?: "${date.monthValue}/${date.dayOfMonth}", color = OloColors.Muted, fontSize = 13.sp)
+        Spacer(Modifier.weight(1f))
+        Text(if (d >= 0) "D-$d" else "D+${-d}", color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** 이번 주 스트립: 일~토, 단계색으로 칠하고 오늘 강조. 누르면 달력 탭으로. */
+@Composable
+private fun WeekStrip(state: HomeState, profileColor: Color, onOpenCalendar: () -> Unit) {
+    val today = state.today
+    val sunday = today.minusDays((today.dayOfWeek.value % 7).toLong())
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(OloColors.Surface)
+            .border(1.dp, OloColors.Line, RoundedCornerShape(14.dp)).clickable(onClick = onOpenCalendar).padding(13.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("이번 주", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            Text("달력 보기 ›", color = profileColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            val labels = listOf("일", "월", "화", "수", "목", "금", "토")
+            (0..6).forEach { i ->
+                val day = sunday.plusDays(i.toLong())
+                val (bg, fg) = phaseColors(state.phaseOf(day))
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(bg)
+                        .then(if (day == today) Modifier.border(2.dp, profileColor, RoundedCornerShape(10.dp)) else Modifier)
+                        .padding(vertical = 7.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(labels[i], fontSize = 9.sp, color = if (bg == Color.White) OloColors.Muted else fg)
+                    Text("${day.dayOfMonth}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = fg)
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------- calendar tab
+
+/** 달력 = 독립 전체화면 탭: 큰 월간 달력 + 범례. */
+@Composable
+private fun CalendarTab(
     state: HomeState, profileColor: Color, visibleMonth: YearMonth,
-    onPrevMonth: () -> Unit, onNextMonth: () -> Unit,
-    onDayClick: (LocalDate) -> Unit, onLogToday: () -> Unit,
+    onPrevMonth: () -> Unit, onNextMonth: () -> Unit, onDayClick: (LocalDate) -> Unit,
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        CycleRing(state, profileColor)
-        Button(
-            onClick = onLogToday,
-            enabled = state.selected != null,
-            colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary),
-            shape = RoundedCornerShape(22.dp),
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp, bottom = 6.dp),
-        ) { Text("＋ 오늘 기록", fontWeight = FontWeight.Bold) }
-
+        Box(Modifier.padding(start = 16.dp, top = 12.dp).height(4.dp).width(46.dp).clip(RoundedCornerShape(3.dp)).background(profileColor))
         MonthHeader(visibleMonth, profileColor, onPrevMonth, onNextMonth)
         MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::recordOf,
             enabled = state.selected != null, onDayClick = onDayClick)
         PhaseLegend()
         Text("예측은 참고용 추정치이며 피임·진단의 근거가 아닙니다.",
             Modifier.fillMaxWidth().padding(16.dp), color = OloColors.Muted, fontSize = 11.sp, textAlign = TextAlign.Center)
-    }
-}
-
-/** 원형 주기 링: 단계별 호 + 오늘 마커, 가운데에 단계·D-day. */
-@Composable
-private fun CycleRing(state: HomeState, profileColor: Color) {
-    val cycle = state.params?.cycleLength ?: 28
-    val periodLen = state.params?.periodLength ?: 5
-    val pred = state.prediction
-    Box(Modifier.fillMaxWidth().padding(top = 18.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(244.dp), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.fillMaxSize()) {
-                val sw = 18.dp.toPx()
-                val r = (size.minDimension - sw) / 2f
-                val tl = Offset(center.x - r, center.y - r)
-                val sz = Size(r * 2, r * 2)
-                drawCircle(OloColors.Line.copy(alpha = 0.5f), r, style = Stroke(sw))
-                fun arc(fromDay: Float, toDay: Float, color: Color) {
-                    val start = -90f + fromDay / cycle * 360f
-                    val sweep = (toDay - fromDay) / cycle * 360f
-                    drawArc(color, start, sweep, useCenter = false, topLeft = tl, size = sz, style = Stroke(sw, cap = StrokeCap.Butt))
-                }
-                if (pred != null) {
-                    val ps = pred.periodStart
-                    arc(0f, periodLen.toFloat(), OloColors.Period)
-                    val fs = ps.until(pred.fertileStart).days.toFloat()
-                    val fe = ps.until(pred.fertileEnd).days.toFloat() + 1f
-                    arc(fs.coerceIn(0f, cycle.toFloat()), fe.coerceIn(0f, cycle.toFloat()), OloColors.Fertile)
-                    val ov = ps.until(pred.ovulation).days.toFloat()
-                    arc(ov, ov + 1f, OloColors.Ovulation)
-                    arc((cycle - 5).toFloat(), cycle.toFloat(), OloColors.Pms)
-                }
-                state.cycleDayIndex?.let { idx ->
-                    val ang = Math.toRadians((-90f + idx.toFloat() / cycle * 360f).toDouble())
-                    val mx = center.x + r * cos(ang).toFloat()
-                    val my = center.y + r * sin(ang).toFloat()
-                    drawCircle(Color.White, 11.dp.toPx(), Offset(mx, my))
-                    drawCircle(profileColor, 11.dp.toPx(), Offset(mx, my), style = Stroke(4.dp.toPx()))
-                }
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(phaseName(state.currentPhase()), color = profileColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                val d = state.daysUntilNextPeriod
-                Text(
-                    when { d == null -> "기록 전"; d >= 0 -> "D-$d"; else -> "D+${-d}" },
-                    color = OloColors.Primary, fontSize = 42.sp, fontWeight = FontWeight.ExtraBold,
-                )
-                Text(if (d == null) "생리 시작일을 기록" else "다음 생리까지", color = OloColors.Muted, fontSize = 13.sp)
-                state.cycleDayIndex?.let { idx ->
-                    val next = pred?.nextPeriodStart
-                    Text("주기 ${idx}일째" + (next?.let { " · 예정 ${it.monthValue}/${it.dayOfMonth}" } ?: ""),
-                        color = OloColors.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
-                }
-            }
-        }
     }
 }
 
@@ -612,62 +735,26 @@ private fun PhaseLegend() {
 // ---------------------------------------------------------------------------- record tab
 
 @Composable
-private fun RecordTab(state: HomeState, onSelectMember: (Long) -> Unit, onOpen: (LocalDate) -> Unit) {
+private fun RecordTab(state: HomeState, onOpen: (LocalDate) -> Unit) {
     val days = state.loggedDays()
     Column(Modifier.fillMaxSize()) {
         SectionTitle("기록", "${state.selected?.name ?: ""} · ${days.size}일 기록됨")
-        Box(Modifier.weight(1f)) {
-            if (days.isEmpty()) {
-                EmptyHint("홈의 ‘오늘 기록’이나 달력 날짜를 눌러 기록을 남겨 보세요.")
-            } else {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(days.size) { i ->
-                        val rec = days[i]
-                        Row(
-                            Modifier.fillMaxWidth().clickable { onOpen(rec.date) }.padding(18.dp, 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column {
-                                Text("${rec.date.monthValue}월 ${rec.date.dayOfMonth}일", fontWeight = FontWeight.Bold, color = OloColors.Ink)
-                                Text(recordSummary(rec), color = OloColors.Muted, fontSize = 13.sp)
-                            }
+        if (days.isEmpty()) {
+            EmptyHint("아래 ＋ 버튼이나 달력 날짜를 눌러 기록을 남겨 보세요.")
+        } else {
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(days.size) { i ->
+                    val rec = days[i]
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpen(rec.date) }.padding(18.dp, 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text("${rec.date.monthValue}월 ${rec.date.dayOfMonth}일", fontWeight = FontWeight.Bold, color = OloColors.Ink)
+                            Text(recordSummary(rec), color = OloColors.Muted, fontSize = 13.sp)
                         }
-                        HorizontalDivider(color = OloColors.Line)
                     }
-                }
-            }
-        }
-        MemberStrip(state.profiles, state.selected?.id, onSelectMember)
-    }
-}
-
-/**
- * 하단 구성원 바: 모든 구성원을 사진·색·이름으로 구분해 나열하고, 눌러서 그 구성원의 기록/통계로 전환.
- * 지금 보고 있는 구성원은 강조(테두리·연한 배경). 구성원이 1명이면 감춘다.
- */
-@Composable
-private fun MemberStrip(profiles: List<Profile>, selectedId: Long?, onSelect: (Long) -> Unit) {
-    if (profiles.size < 2) return
-    Column {
-        HorizontalDivider(color = OloColors.Line)
-        Row(
-            Modifier.fillMaxWidth().background(OloColors.Surface).horizontalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            profiles.forEach { p ->
-                val on = p.id == selectedId
-                Row(
-                    Modifier.clip(RoundedCornerShape(20.dp))
-                        .background(if (on) OloColors.AccentContainer else OloColors.SurfaceSoft)
-                        .clickable { onSelect(p.id) }.padding(6.dp, 5.dp, 12.dp, 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ProfileAvatar(p, size = 26.dp)
-                    Spacer(Modifier.width(7.dp))
-                    Text(p.name, fontSize = 13.sp, color = if (on) OloColors.OnAccentContainer else OloColors.Ink,
-                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+                    HorizontalDivider(color = OloColors.Line)
                 }
             }
         }
@@ -688,9 +775,8 @@ private fun recordSummary(rec: com.kgcaudit.olocycle.data.DayRecord): String {
 // ---------------------------------------------------------------------------- stats tab
 
 @Composable
-private fun StatsTab(state: HomeState, profileColor: Color, onSelectMember: (Long) -> Unit) {
-  Column(Modifier.fillMaxSize()) {
-    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+private fun StatsTab(state: HomeState, profileColor: Color) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SectionTitle("통계", state.selected?.name?.let { "$it · 최근 주기 분석" } ?: "")
         val cycle = state.params?.cycleLength
         val period = state.params?.periodLength
@@ -734,9 +820,8 @@ private fun StatsTab(state: HomeState, profileColor: Color, onSelectMember: (Lon
                 }
             }
         }
+        Spacer(Modifier.height(16.dp))
     }
-    MemberStrip(state.profiles, state.selected?.id, onSelectMember)
-  }
 }
 
 @Composable
@@ -751,14 +836,21 @@ private fun Kpi(modifier: Modifier, value: String, label: String) {
 // ---------------------------------------------------------------------------- settings tab
 
 @Composable
-private fun SettingsTab(
-    state: HomeState,
+private fun SettingsScreen(
     appLockEnabled: Boolean,
     onToggleAppLock: (Boolean) -> Unit,
     onAbout: () -> Unit,
+    onBack: () -> Unit,
 ) {
-    // 설정에는 앱 전체 공통 항목만 둔다. 구성원 추가·수정은 상단 헤더(＋·연필), 이동은 좌우 스와이프/하단 바로 한다.
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    // 설정은 앱 전역 전체화면(탭 아님). 상단 ← 로 돌아간다. 개인별 설정은 각 프로필(상단 연필)에.
+    Column(Modifier.fillMaxSize().background(OloColors.Background)) {
+        Row(Modifier.fillMaxWidth().background(OloColors.Surface).statusBarsPadding().padding(6.dp, 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onBack) { Icon(Icons.Default.ChevronLeft, "뒤로", tint = OloColors.Ink) }
+            Text("설정", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = OloColors.Ink)
+        }
+        HorizontalDivider(color = OloColors.Line)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SectionTitle("설정 · 개인정보", "앱 전체 공통 항목")
         // 프라이버시 안내를 최상단에.
         Card(Modifier.fillMaxWidth().padding(16.dp, 8.dp), colors = CardDefaults.cardColors(containerColor = OloColors.AccentContainer)) {
@@ -779,10 +871,11 @@ private fun SettingsTab(
             Switch(appLockEnabled, onToggleAppLock)
         }
         HorizontalDivider(color = OloColors.Line)
-        Text("구성원 추가는 상단 ＋, 이름·사진·색상·주기 수정은 상단 연필(현재 구성원)에서 합니다. 구성원 이동은 화면을 좌우로 밀거나 기록·통계 하단 바를 누르세요.",
+        Text("구성원 추가는 상단 ＋, 이름·사진·색상·주기 수정은 상단 연필(현재 구성원)에서 합니다. 구성원 이동은 상단 아바타를 누르거나 화면을 좌우로 미세요.",
             Modifier.padding(20.dp, 12.dp), color = OloColors.Muted, fontSize = 12.sp, lineHeight = 18.sp)
         HorizontalDivider(color = OloColors.Line)
         SettingRow("앱 정보 · 오픈소스 고지", onClick = onAbout)
+        }
     }
 }
 
