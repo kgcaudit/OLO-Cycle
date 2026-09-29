@@ -915,8 +915,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
             Text(
                 "가족 구성원별로 생리 주기를 따로 관리하는 앱입니다. 예측은 달력법 기반의 참고용 추정치이며 피임·진단의 근거가 아닙니다.\n\n" +
                     "· 데이터는 이 기기에만 저장 · 인터넷 권한 없음\n" +
-                    "· 디자인: OLO 디자인 시스템 (Apache/MIT 오픈소스 기반)\n" +
-                    "· 주기 카드 표시 기법 참고: ALL TV (MIT)",
+                    "· 디자인: OLO 디자인 시스템 (Apache/MIT 오픈소스 기반)",
                 fontSize = 13.sp, lineHeight = 20.sp,
             )
         },
