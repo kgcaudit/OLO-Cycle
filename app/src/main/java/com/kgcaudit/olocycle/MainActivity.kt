@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -362,12 +363,13 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onFab: () -> Unit) 
                 NavItem(Modifier.weight(1f), Tab.STATS, current, onSelect)
             }
         }
+        // 바 위쪽 경계에 반쯤 걸치도록 띄운 도킹 FAB(그림자로 떠 있는 느낌).
         Box(
-            Modifier.align(Alignment.TopCenter).offset(y = (-20).dp).size(58.dp).clip(CircleShape)
-                .background(OloColors.Primary).border(4.dp, OloColors.Background, CircleShape)
-                .clickable(onClick = onFab),
+            Modifier.align(Alignment.TopCenter).offset(y = (-27).dp).size(56.dp)
+                .shadow(8.dp, CircleShape).clip(CircleShape)
+                .background(OloColors.Primary).clickable(onClick = onFab),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Default.Add, "기록 추가", tint = Color.White, modifier = Modifier.size(28.dp)) }
+        ) { Icon(Icons.Default.Add, "기록 추가", tint = Color.White, modifier = Modifier.size(26.dp)) }
     }
 }
 
@@ -469,19 +471,22 @@ private fun HeroCard(state: HomeState, profileColor: Color) {
     val d = state.daysUntilNextPeriod
     val cycle = state.params?.cycleLength ?: 28
     Box(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+        Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(20.dp))
             .background(Brush.linearGradient(listOf(lerp(profileColor, Color.White, 0.12f), lerp(profileColor, Color.Black, 0.16f))))
-            .padding(18.dp),
+            .padding(horizontal = 20.dp, vertical = 18.dp),
     ) {
-        Column(Modifier.fillMaxWidth(0.72f)) {
+        Column(
+            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.68f),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
             Text("● ${phaseName(state.currentPhase())}" + (state.cycleDayIndex?.let { " · 주기 ${it}일째" } ?: ""),
-                color = Color.White.copy(alpha = 0.92f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                color = Color.White.copy(alpha = 0.92f), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             Text(when { d == null -> "기록 전"; d >= 0 -> "D-$d"; else -> "D+${-d}" },
-                color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 46.sp)
+                color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 48.sp)
             Text(state.prediction?.let { "다음 생리 ${it.nextPeriodStart.monthValue}/${it.nextPeriodStart.dayOfMonth} 예정" }
-                ?: "생리 시작일을 기록해 보세요", color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
+                ?: "생리 시작일을 기록해 보세요", color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp, maxLines = 1)
         }
-        Box(Modifier.align(Alignment.CenterEnd).size(74.dp)) {
+        Box(Modifier.align(Alignment.CenterEnd).size(80.dp)) {
             Canvas(Modifier.fillMaxSize()) {
                 val sw = 7.dp.toPx()
                 val r = (size.minDimension - sw) / 2f
