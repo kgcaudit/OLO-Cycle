@@ -81,6 +81,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kgcaudit.olocycle.auth.BiometricAuth
 import com.kgcaudit.olocycle.cycle.Phase
+import com.kgcaudit.olocycle.data.BackupCodec
 import com.kgcaudit.olocycle.data.Profile
 import com.kgcaudit.olocycle.data.ProfilePhotos
 import com.kgcaudit.olocycle.ui.theme.OloColors
@@ -185,6 +186,8 @@ private fun App(vm: HomeViewModel = viewModel()) {
             },
             onAbout = { showAbout = true },
             onBack = { showSettings = false },
+            onExport = { pass -> vm.exportEncrypted(pass) },
+            onImport = { blob, pass -> vm.importEncrypted(blob, pass) },
         )
         if (showAbout) AboutDialog { showAbout = false }
         return
@@ -543,7 +546,8 @@ private fun HeroCard(state: HomeState, profileColor: Color) {
     val d = state.daysUntilNextPeriod
     val cycle = state.params?.cycleLength ?: 28
     Box(
-        Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(20.dp))
+        // 고정 높이(clip)를 쓰면 큰 글꼴 기기에서 마지막 줄이 잘린다 → 최소 높이로 두어 내용에 맞게 늘어나게.
+        Modifier.fillMaxWidth().heightIn(min = 140.dp).clip(RoundedCornerShape(20.dp))
             .background(Brush.linearGradient(listOf(lerp(profileColor, Color.White, 0.12f), lerp(profileColor, Color.Black, 0.16f))))
             .padding(horizontal = 20.dp, vertical = 18.dp),
     ) {
@@ -1222,7 +1226,36 @@ private fun SettingsScreen(
     onToggleAppLock: (Boolean) -> Unit,
     onAbout: () -> Unit,
     onBack: () -> Unit,
+    onExport: suspend (CharArray) -> ByteArray,
+    onImport: suspend (ByteArray, CharArray) -> Int,
 ) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var passExport by remember { mutableStateOf(false) }   // 내보내기 암호 입력창
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) } // 파일 고른 뒤 복원 암호 입력
+    var confirmRestore by remember { mutableStateOf<Pair<ByteArray, CharArray>?>(null) } // 덮어쓰기 확인
+    var busy by remember { mutableStateOf(false) }
+
+    // 저장 위치 선택기(SAF) — 저장소 권한 불필요. 암호 상태를 클로저로 잡아 고른 위치에 암호문을 쓴다.
+    var exportPassphrase by remember { mutableStateOf<CharArray?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val pass = exportPassphrase
+        exportPassphrase = null
+        if (uri == null || pass == null) return@rememberLauncherForActivityResult
+        busy = true
+        scope.launch {
+            val ok = runCatching {
+                val bytes = onExport(pass)
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("스트림 열기 실패")
+            }.isSuccess
+            busy = false
+            Toast.makeText(ctx, if (ok) "암호화 백업을 저장했습니다." else "백업 저장에 실패했습니다.", Toast.LENGTH_LONG).show()
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        pendingImportUri = uri // 파일을 골랐으면 이어서 암호를 묻는다.
+    }
+
     // 설정은 앱 전역 전체화면(탭 아님). 상단 ← 로 돌아간다. 개인별 설정은 각 프로필(상단 연필)에.
     Column(Modifier.fillMaxSize().background(OloColors.Background)) {
         Row(Modifier.fillMaxWidth().background(OloColors.Surface).statusBarsPadding().padding(6.dp, 8.dp),
@@ -1255,6 +1288,31 @@ private fun SettingsScreen(
                 }
             }
 
+            // 백업 — 암호화 파일로 내보내고, 그 파일에서 복원. 인터넷 없이 기기 파일로만.
+            SettingsGroup("백업")
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(12.dp))
+                .background(OloColors.Surface)) {
+                Row(Modifier.fillMaxWidth().clickable(enabled = !busy) { passExport = true }.padding(15.dp, 14.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("암호화 백업 내보내기", color = OloColors.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("전체 데이터를 암호로 잠근 파일로 저장", color = OloColors.Muted, fontSize = 12.sp)
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted)
+                }
+                HorizontalDivider(color = OloColors.Line)
+                Row(Modifier.fillMaxWidth().clickable(enabled = !busy) { importLauncher.launch(arrayOf("*/*")) }.padding(15.dp, 14.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("백업에서 복원", color = OloColors.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("현재 데이터를 백업 내용으로 대체", color = OloColors.Muted, fontSize = 12.sp)
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted)
+                }
+            }
+            Text("비밀번호는 복원할 때 반드시 필요합니다. 잊으면 백업을 열 수 없습니다(기기에만 저장, 복구 불가).",
+                Modifier.padding(4.dp, 8.dp), color = OloColors.Muted, fontSize = 11.5.sp, lineHeight = 16.sp)
+
             // 앱
             SettingsGroup("앱")
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(12.dp))
@@ -1265,6 +1323,92 @@ private fun SettingsScreen(
             Text("OLO Cycle ${BuildConfig.VERSION_NAME}", Modifier.padding(4.dp, 14.dp), color = OloColors.Muted, fontSize = 11.sp)
             Spacer(Modifier.height(20.dp))
         }
+    }
+
+    // 내보내기 암호 입력(확인 2회) → 저장 위치 선택기 실행.
+    if (passExport) {
+        PassphraseDialog(
+            title = "백업 암호 설정", confirmLabel = "저장 위치 선택", requireConfirm = true,
+            onDismiss = { passExport = false },
+            onConfirm = { pass ->
+                passExport = false
+                exportPassphrase = pass
+                val stamp = java.time.LocalDate.now().toString().replace("-", "")
+                exportLauncher.launch("olo-cycle-backup-$stamp.olobak")
+            },
+        )
+    }
+    // 파일 선택 후 복원 암호 입력 → 덮어쓰기 확인.
+    pendingImportUri?.let { uri ->
+        PassphraseDialog(
+            title = "복원 암호 입력", confirmLabel = "확인", requireConfirm = false,
+            onDismiss = { pendingImportUri = null },
+            onConfirm = { pass ->
+                pendingImportUri = null
+                val bytes = runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+                if (bytes == null) Toast.makeText(ctx, "파일을 읽지 못했습니다.", Toast.LENGTH_LONG).show()
+                else confirmRestore = bytes to pass
+            },
+        )
+    }
+    confirmRestore?.let { (bytes, pass) ->
+        OloDialog(
+            title = "백업에서 복원", onDismiss = { confirmRestore = null }, confirmLabel = "복원", onConfirm = {
+                confirmRestore = null
+                busy = true
+                scope.launch {
+                    val result = runCatching { onImport(bytes, pass) }
+                    busy = false
+                    val msg = result.fold(
+                        onSuccess = { "복원 완료 · 구성원 ${it}명" },
+                        onFailure = { e ->
+                            when (e) {
+                                is javax.crypto.AEADBadTagException -> "비밀번호가 올바르지 않거나 파일이 손상되었습니다."
+                                is BackupCodec.BadBackupException -> e.message ?: "백업 파일이 아닙니다."
+                                else -> "복원에 실패했습니다."
+                            }
+                        },
+                    )
+                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+                }
+            },
+        ) {
+            Text("현재 이 기기의 모든 구성원·기록이 백업 내용으로 대체됩니다. 되돌릴 수 없습니다.",
+                color = OloColors.Ink, fontSize = 13.sp, lineHeight = 20.sp)
+        }
+    }
+}
+
+/** 백업 암호 입력창. requireConfirm이면 확인 칸까지 일치해야 진행. 최소 4자. */
+@Composable
+private fun PassphraseDialog(
+    title: String, confirmLabel: String, requireConfirm: Boolean,
+    onDismiss: () -> Unit, onConfirm: (CharArray) -> Unit,
+) {
+    var pw by remember { mutableStateOf("") }
+    var pw2 by remember { mutableStateOf("") }
+    val tooShort = pw.length < 4
+    val mismatch = requireConfirm && pw != pw2
+    val invalid = pw.isBlank() || tooShort || mismatch
+    OloDialog(title = title, onDismiss = onDismiss, confirmLabel = confirmLabel,
+        onConfirm = { if (!invalid) onConfirm(pw.toCharArray()) }) {
+        OutlinedTextField(pw, { pw = it }, label = { Text("비밀번호") }, singleLine = true,
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(), colors = oloFieldColors())
+        if (requireConfirm) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(pw2, { pw2 = it }, label = { Text("비밀번호 확인") }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(), colors = oloFieldColors())
+        }
+        Spacer(Modifier.height(6.dp))
+        val hint = when {
+            pw.isNotEmpty() && tooShort -> "4자 이상 입력해 주세요."
+            mismatch -> "두 비밀번호가 일치하지 않습니다."
+            requireConfirm -> "복원할 때 이 비밀번호가 필요합니다. 잊지 마세요."
+            else -> "백업을 만들 때 설정한 비밀번호를 입력하세요."
+        }
+        Text(hint, color = if (tooShort && pw.isNotEmpty() || mismatch) OloColors.Period else OloColors.Muted, fontSize = 11.5.sp)
     }
 }
 

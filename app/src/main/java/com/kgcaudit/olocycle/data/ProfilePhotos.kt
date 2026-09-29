@@ -29,6 +29,14 @@ object ProfilePhotos {
         file.absolutePath
     }.getOrNull()
 
+    /** 백업 복원용: 이미 축소된 사진 바이트를 내부 저장소에 그대로 써 두고 새 절대경로를 돌려준다. */
+    fun writeInternal(context: Context, bytes: ByteArray): String? = runCatching {
+        val dir = File(context.filesDir, "profile_photos").apply { mkdirs() }
+        val file = File(dir, "p_${System.currentTimeMillis()}_${bytes.size}.jpg")
+        file.writeBytes(bytes)
+        file.absolutePath
+    }.getOrNull()
+
     /** 프로필 삭제·사진 교체 시 남는 파일을 지운다(있으면). */
     fun delete(path: String?) {
         path ?: return

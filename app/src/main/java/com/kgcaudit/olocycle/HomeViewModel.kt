@@ -7,6 +7,7 @@ import com.kgcaudit.olocycle.cycle.CycleParams
 import com.kgcaudit.olocycle.cycle.CyclePrediction
 import com.kgcaudit.olocycle.cycle.CyclePredictor
 import com.kgcaudit.olocycle.cycle.Phase
+import com.kgcaudit.olocycle.data.BackupCodec
 import com.kgcaudit.olocycle.data.DayRecord
 import com.kgcaudit.olocycle.data.OloDatabase
 import com.kgcaudit.olocycle.data.PeriodStart
@@ -22,7 +23,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.time.LocalDate
 
 /** UI state for the home screen: the selected member, their prediction, and the phase per day. */
@@ -302,6 +306,50 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 selectedId.value = state.value.profiles.firstOrNull { it.id != profile.id }?.id
             }
         }
+    }
+
+    // ---- 암호화 백업 내보내기 / 복원 ------------------------------------------
+
+    /** 전체 데이터(+사진)를 사용자 암호로 봉인한 백업 바이트를 만든다. IO 스레드에서 실행. */
+    suspend fun exportEncrypted(passphrase: CharArray): ByteArray = withContext(Dispatchers.IO) {
+        val profiles = db.profileDao().getAll()
+        val starts = db.periodStartDao().getAll()
+        val records = db.dayRecordDao().getAll()
+        val photos = buildMap<String, ByteArray> {
+            profiles.forEach { p ->
+                p.photoPath?.let { path ->
+                    val f = File(path)
+                    if (f.exists()) runCatching { put(f.name, f.readBytes()) }
+                }
+            }
+        }
+        val json = BackupCodec.encodeJson(BackupCodec.Bundle(profiles, starts, records, photos))
+        BackupCodec.encrypt(json, passphrase)
+    }
+
+    /**
+     * 백업 바이트를 복호화해 현재 데이터를 **전부 대체**한다(복원). 암호가 틀리면 예외를 던져 UI가 안내한다.
+     * 사진은 내부 저장소에 다시 쓰고 새 경로로 연결한다. 반환값은 복원한 구성원 수.
+     */
+    suspend fun importEncrypted(blob: ByteArray, passphrase: CharArray): Int = withContext(Dispatchers.IO) {
+        val json = BackupCodec.decrypt(blob, passphrase)       // 암호 오류 시 AEADBadTagException
+        val bundle = BackupCodec.decodeJson(json)
+
+        // 기존 사진 파일 정리 후 DB 비우기(자식은 CASCADE).
+        db.profileDao().getAll().forEach { ProfilePhotos.delete(it.photoPath) }
+        db.profileDao().clearAll()
+
+        // 사진 basename → 새 내부 경로. 프로필부터 넣고(부모), 그다음 자식 레코드.
+        bundle.profiles.forEach { p ->
+            val newPath = p.photoPath?.let { name -> bundle.photos[name]?.let { ProfilePhotos.writeInternal(getApplication(), it) } }
+            db.profileDao().insertKeepingId(p.copy(photoPath = newPath))
+        }
+        bundle.periodStarts.forEach { db.periodStartDao().insertKeepingId(it) }
+        bundle.dayRecords.forEach { db.dayRecordDao().insertKeepingId(it) }
+
+        // 선택 구성원을 복원본의 첫 구성원으로.
+        selectedId.value = bundle.profiles.minByOrNull { it.sortOrder }?.id
+        bundle.profiles.size
     }
 
     private suspend fun seedIfEmpty() {

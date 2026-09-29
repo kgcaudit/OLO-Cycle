@@ -24,6 +24,16 @@ interface ProfileDao {
 
     @Query("SELECT COUNT(*) FROM profiles")
     suspend fun count(): Int
+
+    // 백업용: 전체 조회 · 전체 삭제(자식 테이블은 FK CASCADE로 함께 지워진다) · id 유지 삽입.
+    @Query("SELECT * FROM profiles")
+    suspend fun getAll(): List<Profile>
+
+    @Query("DELETE FROM profiles")
+    suspend fun clearAll()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertKeepingId(profile: Profile)
 }
 
 @Dao
@@ -36,6 +46,12 @@ interface PeriodStartDao {
 
     @Query("DELETE FROM period_starts WHERE profileId = :profileId AND startDate = :startDate")
     suspend fun deleteByDate(profileId: Long, startDate: java.time.LocalDate)
+
+    @Query("SELECT * FROM period_starts")
+    suspend fun getAll(): List<PeriodStart>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertKeepingId(start: PeriodStart)
 }
 
 @Dao
@@ -45,4 +61,10 @@ interface DayRecordDao {
 
     @Upsert
     suspend fun upsert(record: DayRecord)
+
+    @Query("SELECT * FROM day_records")
+    suspend fun getAll(): List<DayRecord>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertKeepingId(record: DayRecord)
 }
