@@ -637,14 +637,21 @@ private fun WeekStrip(state: HomeState, profileColor: Color, onOpenCalendar: () 
             (0..6).forEach { i ->
                 val day = sunday.plusDays(i.toLong())
                 val (bg, fg) = phaseColors(state.phaseOf(day))
+                val isToday = day == today
                 Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(bg)
-                        .then(if (day == today) Modifier.border(2.dp, profileColor, RoundedCornerShape(10.dp)) else Modifier)
-                        .padding(vertical = 7.dp),
+                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(bg).padding(vertical = 7.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(labels[i], fontSize = 9.sp, color = if (bg == Color.White) OloColors.Muted else fg)
-                    Text("${day.dayOfMonth}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = fg)
+                    Spacer(Modifier.height(2.dp))
+                    // 오늘 = 숫자 뒤 구성원색 원(달력과 동일 규칙).
+                    if (isToday) {
+                        Box(Modifier.size(21.dp).clip(CircleShape).background(profileColor), contentAlignment = Alignment.Center) {
+                            Text("${day.dayOfMonth}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                        }
+                    } else {
+                        Text("${day.dayOfMonth}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = fg)
+                    }
                 }
             }
         }
@@ -803,11 +810,13 @@ private fun MiniMonth(month: YearMonth, today: LocalDate, profileColor: Color, p
             cells.chunked(7).forEach { week ->
                 Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(1.5.dp)) {
                     week.forEach { day ->
-                        val c = if (day == null) Color.Transparent else miniColor(phaseOf(day))
-                        Box(
-                            Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(c)
-                                .then(if (day == today) Modifier.border(1.dp, profileColor, RoundedCornerShape(2.dp)) else Modifier),
-                        )
+                        // 오늘은 구성원색 solid 칸으로(연 뷰에선 숫자가 없으므로 꽉 채워 또렷하게).
+                        val c = when {
+                            day == null -> Color.Transparent
+                            day == today -> profileColor
+                            else -> miniColor(phaseOf(day))
+                        }
+                        Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(c))
                     }
                     repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
                 }
@@ -956,7 +965,7 @@ private fun DayCell(
     val shape = RoundedCornerShape(10.dp)
     Box(
         (if (fill) Modifier.fillMaxSize() else Modifier.fillMaxWidth().aspectRatio(1f)).clip(shape).background(bg)
-            // 예측 생리 = 점선 테두리(Apple·Flo 관습), 배란 = ◯ 고리, 오늘 = 프로필 색 실선.
+            // 예측 생리 = 점선 테두리(Apple·Flo 관습), 배란 = ◯ 고리. (오늘은 숫자 뒤 원으로 표시 → 아래 참조)
             .drawBehind {
                 val stroke = 2.dp.toPx()
                 when (phase) {
@@ -970,21 +979,30 @@ private fun DayCell(
                     }
                     else -> {}
                 }
-                if (isToday) drawRoundRect(
-                    profileColor, style = Stroke(stroke),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
-                )
             }
             .clickable(enabled = enabled) { onClick(day) },
     ) {
         // 위: 날짜 + 짧은 라벨(생리 N일 / 예정 / 배란), 아래: 기록 점.
+        // 오늘 = 숫자 뒤 구성원색 원(Google·Apple 관습). 칸 채움색·배란 고리와 무관하게 또렷하다.
         Column(Modifier.align(Alignment.TopCenter).padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${day.dayOfMonth}", color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 15.sp)
+            TodayAwareDayNumber(day.dayOfMonth, isToday, profileColor, fg)
             if (label != null) {
                 Text(label, color = fg.copy(alpha = 0.9f), fontSize = 8.5.sp, fontWeight = FontWeight.Bold, lineHeight = 9.sp, maxLines = 1)
             }
         }
         DayMarkers(record, Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp))
+    }
+}
+
+/** 날짜 숫자. 오늘이면 구성원색 원 안에 흰 숫자로, 아니면 단계색(fg) 숫자로 그린다. */
+@Composable
+private fun TodayAwareDayNumber(dayOfMonth: Int, isToday: Boolean, accent: Color, fg: Color) {
+    if (isToday) {
+        Box(Modifier.size(22.dp).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
+            Text("$dayOfMonth", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 14.sp)
+        }
+    } else {
+        Text("$dayOfMonth", color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 15.sp)
     }
 }
 
