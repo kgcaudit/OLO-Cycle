@@ -67,4 +67,8 @@ interface DayRecordDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertKeepingId(record: DayRecord)
+
+    /** 합치기(merge)용: 같은 (구성원, 날짜)가 이미 있으면 기존 기록을 두고 건너뛴다. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(record: DayRecord): Long
 }

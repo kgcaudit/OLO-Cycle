@@ -327,28 +327,57 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         BackupCodec.encrypt(json, passphrase)
     }
 
+    /** 복원 방식: 현재 데이터를 전부 대체 / 현재 데이터에 합치기. */
+    enum class ImportMode { REPLACE, MERGE }
+
     /**
-     * 백업 바이트를 복호화해 현재 데이터를 **전부 대체**한다(복원). 암호가 틀리면 예외를 던져 UI가 안내한다.
-     * 사진은 내부 저장소에 다시 쓰고 새 경로로 연결한다. 반환값은 복원한 구성원 수.
+     * 백업 바이트를 복호화해 복원한다. 암호가 틀리면 예외를 던져 UI가 안내한다(사진은 내부 저장소로 복구).
+     * - REPLACE: 현재 데이터를 전부 지우고 백업 내용으로 대체(원본 id 유지).
+     * - MERGE: 이름이 같은 구성원은 그 구성원에 기록을 합치고(같은 날짜는 기존 유지), 없는 구성원은 새로 추가.
+     * 반환값은 복원(대체/합침)에 관여한 구성원 수.
      */
-    suspend fun importEncrypted(blob: ByteArray, passphrase: CharArray): Int = withContext(Dispatchers.IO) {
+    suspend fun importEncrypted(blob: ByteArray, passphrase: CharArray, mode: ImportMode): Int = withContext(Dispatchers.IO) {
         val json = BackupCodec.decrypt(blob, passphrase)       // 암호 오류 시 AEADBadTagException
         val bundle = BackupCodec.decodeJson(json)
+        val ctx = getApplication<Application>()
 
-        // 기존 사진 파일 정리 후 DB 비우기(자식은 CASCADE).
-        db.profileDao().getAll().forEach { ProfilePhotos.delete(it.photoPath) }
-        db.profileDao().clearAll()
-
-        // 사진 basename → 새 내부 경로. 프로필부터 넣고(부모), 그다음 자식 레코드.
-        bundle.profiles.forEach { p ->
-            val newPath = p.photoPath?.let { name -> bundle.photos[name]?.let { ProfilePhotos.writeInternal(getApplication(), it) } }
-            db.profileDao().insertKeepingId(p.copy(photoPath = newPath))
+        if (mode == ImportMode.REPLACE) {
+            // 기존 사진 파일 정리 후 DB 비우기(자식은 CASCADE). 그다음 원본 id 그대로 삽입.
+            db.profileDao().getAll().forEach { ProfilePhotos.delete(it.photoPath) }
+            db.profileDao().clearAll()
+            bundle.profiles.forEach { p ->
+                val newPath = p.photoPath?.let { name -> bundle.photos[name]?.let { ProfilePhotos.writeInternal(ctx, it) } }
+                db.profileDao().insertKeepingId(p.copy(photoPath = newPath))
+            }
+            bundle.periodStarts.forEach { db.periodStartDao().insertKeepingId(it) }
+            bundle.dayRecords.forEach { db.dayRecordDao().insertKeepingId(it) }
+            selectedId.value = bundle.profiles.minByOrNull { it.sortOrder }?.id
+            return@withContext bundle.profiles.size
         }
-        bundle.periodStarts.forEach { db.periodStartDao().insertKeepingId(it) }
-        bundle.dayRecords.forEach { db.dayRecordDao().insertKeepingId(it) }
 
-        // 선택 구성원을 복원본의 첫 구성원으로.
-        selectedId.value = bundle.profiles.minByOrNull { it.sortOrder }?.id
+        // MERGE: 백업의 구 profileId → 현재 DB의 실제 id 로 매핑. 이름이 같으면 기존 구성원에 합치고, 없으면 추가.
+        val existing = db.profileDao().getAll()
+        val byName = existing.associateBy { it.name }
+        var order = existing.size
+        val idMap = HashMap<Long, Long>()
+        bundle.profiles.forEach { p ->
+            val target = byName[p.name]
+            val targetId = if (target != null) {
+                target.id // 기존 구성원에 합침(프로필 설정·사진은 기존 것을 유지).
+            } else {
+                val newPath = p.photoPath?.let { name -> bundle.photos[name]?.let { ProfilePhotos.writeInternal(ctx, it) } }
+                db.profileDao().insert(p.copy(id = 0, photoPath = newPath, sortOrder = order++))
+            }
+            idMap[p.id] = targetId
+        }
+        // 자식 레코드는 새 id로 삽입하되 중복(같은 구성원·날짜/시작일)은 건너뛴다.
+        bundle.periodStarts.forEach { s ->
+            idMap[s.profileId]?.let { pid -> db.periodStartDao().insert(s.copy(id = 0, profileId = pid)) }
+        }
+        bundle.dayRecords.forEach { r ->
+            idMap[r.profileId]?.let { pid -> db.dayRecordDao().insertIfAbsent(r.copy(id = 0, profileId = pid)) }
+        }
+        if (selectedId.value == null) selectedId.value = existing.firstOrNull()?.id ?: idMap.values.firstOrNull()
         bundle.profiles.size
     }
 

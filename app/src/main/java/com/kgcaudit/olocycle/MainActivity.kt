@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -126,7 +127,10 @@ private fun App(vm: HomeViewModel = viewModel()) {
     val appLockEnabled by vm.appLockEnabled.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as? FragmentActivity
-    var tab by remember { mutableStateOf(Tab.HOME) }
+    // 화면 상태는 잠금 게이트보다 위에 두어(그리고 rememberSaveable로) 잠금·프로세스 재생성 후에도 보존한다.
+    // (게이트 아래에 두면 잠금 때 컴포지션에서 빠져 리셋 → 해제 후 항상 홈으로 떨어지는 버그가 있었다.)
+    var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
     var showAdd by remember { mutableStateOf(false) }
     var editProfile by remember { mutableStateOf<Profile?>(null) }
@@ -136,6 +140,8 @@ private fun App(vm: HomeViewModel = viewModel()) {
     // 앱 잠금(프로필 무관, 앱 전체 1개). 첫 구동엔 잠긴 상태로 시작하고, 홈/타 앱으로 나갔다 오면 다시 잠근다.
     var authed by rememberSaveable { mutableStateOf(false) }
     var authInProgress by remember { mutableStateOf(false) }
+    // 파일 선택기(SAF)처럼 앱 내부 작업으로 잠깐 나갈 때는 재잠금을 억제한다(인증창 이탈과 같은 처리).
+    var suppressRelock by remember { mutableStateOf(false) }
     val gated = appLockEnabled && !authed
 
     val requestUnlock: () -> Unit = req@{
@@ -157,8 +163,11 @@ private fun App(vm: HomeViewModel = viewModel()) {
             when (event) {
                 // 회전 등 구성 변경으로 인한 정지는 재잠금에서 제외(진짜 백그라운드로 나갈 때만 잠근다).
                 Lifecycle.Event.ON_STOP ->
-                    if (!authInProgress && activity?.isChangingConfigurations != true) authed = false
-                Lifecycle.Event.ON_RESUME -> if (appLockEnabled && !authed && !authInProgress) requestUnlock()
+                    if (!authInProgress && !suppressRelock && activity?.isChangingConfigurations != true) authed = false
+                Lifecycle.Event.ON_RESUME -> {
+                    suppressRelock = false // 파일 선택 등에서 돌아오면 억제 해제(다음 실제 백그라운드부터 다시 잠금).
+                    if (appLockEnabled && !authed && !authInProgress) requestUnlock()
+                }
                 else -> {}
             }
         }
@@ -171,9 +180,9 @@ private fun App(vm: HomeViewModel = viewModel()) {
         return
     }
 
-    var showSettings by remember { mutableStateOf(false) }
     // 설정은 앱 전역 → 탭이 아니라 우상단 ⚙ 로 진입하는 전체화면. 구성원 스위처를 띄우지 않는다.
     if (showSettings) {
+        BackHandler { showSettings = false } // 뒤로 가기 = 설정 닫고 이전 화면으로(앱 종료 아님).
         SettingsScreen(
             appLockEnabled = appLockEnabled,
             onToggleAppLock = { on ->
@@ -187,11 +196,15 @@ private fun App(vm: HomeViewModel = viewModel()) {
             onAbout = { showAbout = true },
             onBack = { showSettings = false },
             onExport = { pass -> vm.exportEncrypted(pass) },
-            onImport = { blob, pass -> vm.importEncrypted(blob, pass) },
+            onImport = { blob, pass, mode -> vm.importEncrypted(blob, pass, mode) },
+            onExternalPick = { suppressRelock = true }, // SAF 열기 직전 재잠금 억제
         )
         if (showAbout) AboutDialog { showAbout = false }
         return
     }
+
+    // 앱 전체 뒤로 가기: 홈이 아니면 홈으로, 홈이면 기본 동작(백그라운드). 다이얼로그는 각자 back으로 닫힌다.
+    BackHandler(enabled = tab != Tab.HOME) { tab = Tab.HOME }
 
     // 링·달력·강조는 프로필 색(정체성)으로 물들여 "누구 화면"인지 보이게 한다.
     val profileColor = state.selected?.let { Color(it.color) } ?: OloColors.Primary
@@ -1227,7 +1240,8 @@ private fun SettingsScreen(
     onAbout: () -> Unit,
     onBack: () -> Unit,
     onExport: suspend (CharArray) -> ByteArray,
-    onImport: suspend (ByteArray, CharArray) -> Int,
+    onImport: suspend (ByteArray, CharArray, HomeViewModel.ImportMode) -> Int,
+    onExternalPick: () -> Unit,
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1301,7 +1315,7 @@ private fun SettingsScreen(
                     Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted)
                 }
                 HorizontalDivider(color = OloColors.Line)
-                Row(Modifier.fillMaxWidth().clickable(enabled = !busy) { importLauncher.launch(arrayOf("*/*")) }.padding(15.dp, 14.dp),
+                Row(Modifier.fillMaxWidth().clickable(enabled = !busy) { onExternalPick(); importLauncher.launch(arrayOf("*/*")) }.padding(15.dp, 14.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("백업에서 복원", color = OloColors.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -1334,6 +1348,7 @@ private fun SettingsScreen(
                 passExport = false
                 exportPassphrase = pass
                 val stamp = java.time.LocalDate.now().toString().replace("-", "")
+                onExternalPick()
                 exportLauncher.launch("olo-cycle-backup-$stamp.olobak")
             },
         )
@@ -1352,29 +1367,49 @@ private fun SettingsScreen(
         )
     }
     confirmRestore?.let { (bytes, pass) ->
+        val runImport: (HomeViewModel.ImportMode) -> Unit = { mode ->
+            confirmRestore = null
+            busy = true
+            scope.launch {
+                val result = runCatching { onImport(bytes, pass, mode) }
+                busy = false
+                val msg = result.fold(
+                    onSuccess = {
+                        if (mode == HomeViewModel.ImportMode.MERGE) "합치기 완료 · 구성원 ${it}명 반영" else "복원 완료 · 구성원 ${it}명"
+                    },
+                    onFailure = { e ->
+                        when (e) {
+                            is javax.crypto.AEADBadTagException -> "비밀번호가 올바르지 않거나 파일이 손상되었습니다."
+                            is BackupCodec.BadBackupException -> e.message ?: "백업 파일이 아닙니다."
+                            else -> "복원에 실패했습니다."
+                        }
+                    },
+                )
+                Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+            }
+        }
         OloDialog(
-            title = "백업에서 복원", onDismiss = { confirmRestore = null }, confirmLabel = "복원", onConfirm = {
-                confirmRestore = null
-                busy = true
-                scope.launch {
-                    val result = runCatching { onImport(bytes, pass) }
-                    busy = false
-                    val msg = result.fold(
-                        onSuccess = { "복원 완료 · 구성원 ${it}명" },
-                        onFailure = { e ->
-                            when (e) {
-                                is javax.crypto.AEADBadTagException -> "비밀번호가 올바르지 않거나 파일이 손상되었습니다."
-                                is BackupCodec.BadBackupException -> e.message ?: "백업 파일이 아닙니다."
-                                else -> "복원에 실패했습니다."
-                            }
-                        },
-                    )
-                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
-                }
-            },
+            title = "백업에서 복원", onDismiss = { confirmRestore = null },
+            confirmLabel = "취소", onConfirm = { confirmRestore = null }, dismissLabel = null,
         ) {
-            Text("현재 이 기기의 모든 구성원·기록이 백업 내용으로 대체됩니다. 되돌릴 수 없습니다.",
-                color = OloColors.Ink, fontSize = 13.sp, lineHeight = 20.sp)
+            Text("복원 방식을 선택하세요.", color = OloColors.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = { runImport(HomeViewModel.ImportMode.MERGE) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary),
+                shape = RoundedCornerShape(12.dp),
+            ) { Text("현재 데이터에 합치기", fontWeight = FontWeight.Bold) }
+            Text("기존 데이터는 그대로 두고, 백업의 구성원·기록을 추가합니다(이름이 같은 구성원은 합치고, 같은 날짜 기록은 기존 유지).",
+                Modifier.padding(top = 6.dp, bottom = 14.dp), color = OloColors.Muted, fontSize = 11.5.sp, lineHeight = 16.sp)
+            OutlinedButton(
+                onClick = { runImport(HomeViewModel.ImportMode.REPLACE) },
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, OloColors.Period),
+                shape = RoundedCornerShape(12.dp),
+            ) { Text("전부 대체 (덮어쓰기)", color = OloColors.Period, fontWeight = FontWeight.Bold) }
+            Text("현재 이 기기의 모든 구성원·기록을 지우고 백업 내용으로 바꿉니다. 되돌릴 수 없습니다.",
+                Modifier.padding(top = 6.dp), color = OloColors.Muted, fontSize = 11.5.sp, lineHeight = 16.sp)
         }
     }
 }
