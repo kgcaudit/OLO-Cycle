@@ -37,9 +37,13 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -1306,60 +1310,47 @@ private fun SettingsScreen(
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             // 보안
             SettingsGroup("보안")
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(12.dp))
-                .background(OloColors.Surface).padding(15.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("앱 잠금", fontWeight = FontWeight.Bold, color = OloColors.Ink, fontSize = 14.sp)
-                    Text("열 때·다른 앱에서 돌아올 때 생체인증/PIN 요구", color = OloColors.Muted, fontSize = 12.sp)
+            SettingsGroupCard {
+                SettingsIconRow(Icons.Default.Lock, "앱 잠금", "열 때·다른 앱에서 돌아올 때 생체인증/PIN 요구") {
+                    Switch(appLockEnabled, onToggleAppLock)
                 }
-                Switch(appLockEnabled, onToggleAppLock)
             }
 
-            // 개인정보
+            // 개인정보 — 방패 아이콘 + 요약. (전역 항목이라 브랜드 클레이 톤)
             SettingsGroup("개인정보")
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = OloColors.AccentContainer)) {
-                Column(Modifier.padding(15.dp)) {
-                    Text("내 데이터는 이 기기에만 있습니다", color = OloColors.OnAccentContainer, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
-                    Spacer(Modifier.height(6.dp))
-                    listOf("인터넷 권한 없음 · 서버 전송 없음", "추적·광고 SDK 없음", "계정 없이 사용").forEach {
-                        Text("· $it", color = OloColors.OnAccentContainer, fontSize = 12.5.sp, lineHeight = 19.sp)
+                Row(Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
+                    Icon(Icons.Default.Shield, null, tint = OloColors.OnAccentContainer, modifier = Modifier.size(20.dp).padding(top = 2.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("내 데이터는 이 기기에만 있습니다", color = OloColors.OnAccentContainer, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(6.dp))
+                        listOf("인터넷 권한 없음 · 서버 전송 없음", "추적·광고 SDK 없음", "계정 없이 사용").forEach {
+                            Text("· $it", color = OloColors.OnAccentContainer, fontSize = 12.5.sp, lineHeight = 19.sp)
+                        }
                     }
                 }
             }
 
             // 백업 — 암호화 파일로 내보내고, 그 파일에서 복원. 인터넷 없이 기기 파일로만.
             SettingsGroup("백업")
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(12.dp))
-                .background(OloColors.Surface)) {
-                Row(Modifier.fillMaxWidth().clickable(enabled = !busy) { passExport = true }.padding(15.dp, 14.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("암호화 백업 내보내기", color = OloColors.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text("전체 데이터를 암호로 잠근 파일로 저장", color = OloColors.Muted, fontSize = 12.sp)
-                    }
-                    Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted)
-                }
-                HorizontalDivider(color = OloColors.Line)
-                Row(Modifier.fillMaxWidth().clickable(enabled = !busy) { onExternalPick(); importLauncher.launch(arrayOf("*/*")) }.padding(15.dp, 14.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("백업에서 복원", color = OloColors.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text("현재 데이터를 백업 내용으로 대체", color = OloColors.Muted, fontSize = 12.sp)
-                    }
-                    Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted)
-                }
+            SettingsGroupCard {
+                SettingsIconRow(Icons.Default.FileUpload, "암호화 백업 내보내기", "전체 데이터를 암호로 잠근 파일로 저장",
+                    onClick = if (!busy) ({ passExport = true }) else null) { Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted) }
+                HorizontalDivider(color = OloColors.Line, modifier = Modifier.padding(start = 58.dp))
+                SettingsIconRow(Icons.Default.FileDownload, "백업에서 복원", "현재 데이터를 백업 내용으로 대체",
+                    onClick = if (!busy) ({ onExternalPick(); importLauncher.launch(arrayOf("*/*")) }) else null) { Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted) }
             }
             Text("비밀번호는 복원할 때 반드시 필요합니다. 잊으면 백업을 열 수 없습니다(기기에만 저장, 복구 불가).",
                 Modifier.padding(4.dp, 8.dp), color = OloColors.Muted, fontSize = 11.5.sp, lineHeight = 16.sp)
 
             // 앱
             SettingsGroup("앱")
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(12.dp))
-                .background(OloColors.Surface).clickable(onClick = onAbout).padding(15.dp, 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("앱 정보 · 오픈소스 고지", Modifier.weight(1f), color = OloColors.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted)
+            SettingsGroupCard {
+                SettingsIconRow(Icons.Default.Info, "앱 정보 · 오픈소스 고지", "버전 ${BuildConfig.VERSION_NAME} · 오픈소스 라이선스",
+                    onClick = onAbout) { Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted) }
             }
-            Text("OLO Cycle ${BuildConfig.VERSION_NAME}", Modifier.padding(4.dp, 14.dp), color = OloColors.Muted, fontSize = 11.sp)
+            Spacer(Modifier.height(4.dp))
             Spacer(Modifier.height(20.dp))
         }
     }
@@ -1473,8 +1464,43 @@ private fun PassphraseDialog(
 }
 
 @Composable
-private fun SettingsGroup(title: String) {
+internal fun SettingsGroup(title: String) {
     Text(title, Modifier.padding(4.dp, 18.dp, 4.dp, 8.dp), color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+}
+
+// 설정 그룹 카드: 둥근 테두리로 묶어 한 그룹의 항목들을 담는다(나안 B, 아이콘 리스트형).
+@Composable
+internal fun SettingsGroupCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .border(1.dp, OloColors.Line, RoundedCornerShape(14.dp)).background(OloColors.Surface),
+        content = content,
+    )
+}
+
+// 설정 항목 행: 왼쪽 클레이 원형 아이콘 + 제목·부제, 오른쪽 trailing(스위치·화살표). onClick 이 있으면 눌러진다.
+@Composable
+internal fun SettingsIconRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: (() -> Unit)? = null,
+    trailing: @Composable () -> Unit,
+) {
+    val base = Modifier.fillMaxWidth()
+        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+        .padding(14.dp, 12.dp)
+    Row(base, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(32.dp).clip(CircleShape).background(OloColors.Primary.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = OloColors.Primary, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = OloColors.Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(subtitle, color = OloColors.Muted, fontSize = 12.sp)
+        }
+        trailing()
+    }
 }
 
 @Composable
