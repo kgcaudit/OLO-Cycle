@@ -643,14 +643,12 @@ private fun WeekStrip(state: HomeState, profileColor: Color, onOpenCalendar: () 
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(labels[i], fontSize = 9.sp, color = if (bg == Color.White) OloColors.Muted else fg)
-                    Spacer(Modifier.height(2.dp))
-                    // 오늘 = 숫자 뒤 구성원색 원(달력과 동일 규칙).
-                    if (isToday) {
-                        Box(Modifier.size(21.dp).clip(CircleShape).background(profileColor), contentAlignment = Alignment.Center) {
-                            Text("${day.dayOfMonth}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-                        }
-                    } else {
-                        Text("${day.dayOfMonth}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = fg)
+                    Spacer(Modifier.height(3.dp))
+                    // 숫자 영역은 고정 높이 슬롯 → 모든 칸 높이가 같다. 오늘만 그 안에 구성원색 원(강조는 색으로).
+                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                        if (isToday) Box(Modifier.matchParentSize().clip(CircleShape).background(profileColor))
+                        Text("${day.dayOfMonth}", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                            color = if (isToday) Color.White else fg)
                     }
                 }
             }
