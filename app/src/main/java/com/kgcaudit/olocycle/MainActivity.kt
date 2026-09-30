@@ -513,30 +513,7 @@ private fun HomeDashboard(
         UpcomingCard(state, profileColor)
         Spacer(Modifier.height(12.dp))
         WeekStrip(state, profileColor, onOpenCalendar)
-        state.cycleDayIndex?.let { idx ->
-            Spacer(Modifier.height(12.dp))
-            CycleProgressCard(idx, state.params?.cycleLength ?: 28, phaseName(state.currentPhase()), profileColor)
-        }
         Spacer(Modifier.height(16.dp))
-    }
-}
-
-/** 이번 주기 진행 — 홈 하단 여백 활용(면책 문구 자리). 진행 바는 활성 구성원 색. */
-@Composable
-private fun CycleProgressCard(dayIndex: Int, cycleLength: Int, phase: String, accent: Color) {
-    AccentCard(accent) {
-        Text("이번 주기 진행", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(9.dp))
-        val frac = (dayIndex.toFloat() / cycleLength).coerceIn(0f, 1f)
-        Box(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(7.dp)).background(OloColors.SurfaceSoft)) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(frac).clip(RoundedCornerShape(7.dp)).background(accent))
-        }
-        Spacer(Modifier.height(7.dp))
-        Row(Modifier.fillMaxWidth()) {
-            Text("$phase · ${dayIndex}일째", color = OloColors.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
-            Text("${cycleLength}일 주기", color = OloColors.Muted, fontSize = 12.sp)
-        }
     }
 }
 
@@ -553,9 +530,12 @@ internal fun AccentCard(accent: Color, onClick: (() -> Unit)? = null, content: @
     }
 }
 
-/** 상태 히어로 카드: 구성원 색 그라데이션 + 단계·D-day·다음 예정 + 미니 링. */
+/**
+ * 상태 히어로 카드: 구성원 색 그라데이션 + 단계·D-day·다음 예정 + 주기 진행 바.
+ * 진행을 히어로 안에 통합해 하단 별도 카드와의 중복을 없앤다(원형 링 대신 선형 바로 숫자까지 함께 보여줌).
+ */
 @Composable
-private fun HeroCard(state: HomeState, profileColor: Color) {
+internal fun HeroCard(state: HomeState, profileColor: Color) {
     val d = state.daysUntilNextPeriod
     val cycle = state.params?.cycleLength ?: 28
     Box(
@@ -564,27 +544,25 @@ private fun HeroCard(state: HomeState, profileColor: Color) {
             .background(Brush.linearGradient(listOf(lerp(profileColor, Color.White, 0.12f), lerp(profileColor, Color.Black, 0.16f))))
             .padding(horizontal = 20.dp, vertical = 18.dp),
     ) {
-        Column(
-            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.68f),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
+        Column(Modifier.align(Alignment.CenterStart).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text("● ${phaseName(state.currentPhase())}" + (state.cycleDayIndex?.let { " · 주기 ${it}일째" } ?: ""),
                 color = Color.White.copy(alpha = 0.92f), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             Text(when { d == null -> "기록 전"; d >= 0 -> "D-$d"; else -> "D+${-d}" },
                 color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 48.sp)
             Text(state.prediction?.let { "다음 생리 ${it.nextPeriodStart.monthValue}/${it.nextPeriodStart.dayOfMonth} 예정" }
                 ?: "생리 시작일을 기록해 보세요", color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp, maxLines = 1)
-        }
-        Box(Modifier.align(Alignment.CenterEnd).size(80.dp)) {
-            Canvas(Modifier.fillMaxSize()) {
-                val sw = 7.dp.toPx()
-                val r = (size.minDimension - sw) / 2f
-                val tl = Offset(center.x - r, center.y - r); val sz = Size(r * 2, r * 2)
-                drawCircle(Color.White.copy(alpha = 0.28f), r, style = Stroke(sw))
-                state.cycleDayIndex?.let { idx ->
-                    drawArc(Color.White, -90f, (idx.toFloat() / cycle * 360f), false, tl, sz, style = Stroke(sw, cap = StrokeCap.Round))
-                    val ang = Math.toRadians((-90f + idx.toFloat() / cycle * 360f).toDouble())
-                    drawCircle(Color.White, 5.dp.toPx(), Offset(center.x + r * cos(ang).toFloat(), center.y + r * sin(ang).toFloat()))
+            // 주기 진행 바(기록이 있을 때만). 링을 대체한다.
+            state.cycleDayIndex?.let { idx ->
+                Spacer(Modifier.height(6.dp))
+                val frac = (idx.toFloat() / cycle).coerceIn(0f, 1f)
+                Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.28f))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(frac).clip(RoundedCornerShape(5.dp)).background(Color.White))
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    Text("${idx}일째", color = Color.White.copy(alpha = 0.9f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.weight(1f))
+                    Text("${cycle}일 주기", color = Color.White.copy(alpha = 0.9f), fontSize = 11.sp)
                 }
             }
         }
