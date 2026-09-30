@@ -779,8 +779,9 @@ private fun CalendarTab(
                     onTitleClick = { showPicker = true },
                     onToday = { onSetMonth(YearMonth.now()) },
                 )
+                // 날짜 칸은 정사각형으로(인위적 세로 늘림 없음). 남는 세로 공간은 아래에 두고 셀을 늘리지 않는다.
                 Box(
-                    Modifier.fillMaxWidth().weight(1f).pointerInput(visibleMonth) {
+                    Modifier.fillMaxWidth().pointerInput(visibleMonth) {
                         val threshold = 56.dp.toPx()
                         var total = 0f
                         detectHorizontalDragGestures(
@@ -792,12 +793,13 @@ private fun CalendarTab(
                         ) { change, dragAmount -> total += dragAmount; change.consume() }
                     },
                 ) {
-                    Box(Modifier.fillMaxSize().graphicsLayer { translationX = gridOffset.value }) {
+                    Box(Modifier.fillMaxWidth().graphicsLayer { translationX = gridOffset.value }) {
                         MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::recordOf,
-                            state::calendarCellLabel, enabled = state.selected != null, onDayClick = dayClick, fillHeight = true)
+                            state::calendarCellLabel, enabled = state.selected != null, onDayClick = dayClick, fillHeight = false)
                     }
                 }
                 Box(Modifier.padding(bottom = 8.dp)) { PhaseLegend() }
+                Spacer(Modifier.weight(1f))
             } else {
                 YearView(
                     year = visibleMonth.year, today = state.today, profileColor = profileColor,
