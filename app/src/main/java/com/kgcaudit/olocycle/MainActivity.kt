@@ -30,20 +30,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -89,6 +79,7 @@ import com.kgcaudit.olocycle.cycle.Phase
 import com.kgcaudit.olocycle.data.BackupCodec
 import com.kgcaudit.olocycle.data.Profile
 import com.kgcaudit.olocycle.data.ProfilePhotos
+import com.kgcaudit.olocycle.ui.OloIcons
 import com.kgcaudit.olocycle.ui.theme.OloColors
 import com.kgcaudit.olocycle.ui.theme.OloTheme
 import java.time.LocalDate
@@ -119,10 +110,10 @@ class MainActivity : FragmentActivity() {
     }
 }
 
-private enum class Tab(val label: String, val icon: ImageVector) {
-    HOME("오늘", Icons.Default.Home),
-    CALENDAR("달력", Icons.Default.CalendarMonth),
-    ANALYSIS("분석", Icons.Default.BarChart),
+internal enum class Tab(val label: String, val icon: ImageVector) {
+    HOME("오늘", OloIcons.Home),
+    CALENDAR("달력", OloIcons.Calendar),
+    ANALYSIS("분석", OloIcons.Chart),
 }
 
 @Composable
@@ -362,7 +353,7 @@ private fun MemberSwitcher(
                             if (hasPhoto) { ProfileAvatar(p, size = 28.dp, square = true); Spacer(Modifier.width(7.dp)) }
                             Text(p.name, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = OloColors.Ink, maxLines = 1)
                             Spacer(Modifier.width(5.dp))
-                            Icon(Icons.Default.Edit, "이 구성원 편집", tint = OloColors.Muted, modifier = Modifier.size(13.dp))
+                            Icon(OloIcons.Edit, "이 구성원 편집", tint = OloColors.Muted, modifier = Modifier.size(13.dp))
                         }
                     } else {
                         // 비활성: 사각 아바타(사진 또는 색+2글자)만. 옆에 이름 없음 → 중복 없음.
@@ -374,9 +365,9 @@ private fun MemberSwitcher(
                     Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).border(1.6.dp, OloColors.Outline, RoundedCornerShape(9.dp))
                         .clickable(onClick = onAdd),
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Default.Add, "구성원 추가", tint = OloColors.Outline, modifier = Modifier.size(18.dp)) }
+                ) { Icon(OloIcons.Add, "구성원 추가", tint = OloColors.Outline, modifier = Modifier.size(18.dp)) }
             }
-            IconButton(onSettings, Modifier.size(38.dp)) { Icon(Icons.Default.Settings, "설정", tint = OloColors.Muted, modifier = Modifier.size(19.dp)) }
+            IconButton(onSettings, Modifier.size(38.dp)) { Icon(OloIcons.Settings, "설정", tint = OloColors.Muted, modifier = Modifier.size(19.dp)) }
         }
         HorizontalDivider(color = OloColors.Line)
     }
@@ -395,7 +386,7 @@ private fun OloRingMark(size: Dp, color: Color) {
 
 /** 하단 3탭 + 오른쪽 ＋기록. 활성 탭·FAB는 활성 구성원 색(B안 강조). */
 @Composable
-private fun BottomBar(current: Tab, accent: Color, onSelect: (Tab) -> Unit, onFab: () -> Unit) {
+internal fun BottomBar(current: Tab, accent: Color, onSelect: (Tab) -> Unit, onFab: () -> Unit) {
     // 3개 뷰 탭(오늘·달력·분석) + 오른쪽 끝에 기록 추가 ＋ 하나. 바 안에 두어 콘텐츠와 겹치지 않는다.
     Column {
         HorizontalDivider(color = OloColors.Line)
@@ -410,7 +401,7 @@ private fun BottomBar(current: Tab, accent: Color, onSelect: (Tab) -> Unit, onFa
                         Modifier.size(44.dp).shadow(4.dp, CircleShape).clip(CircleShape)
                             .background(accent).clickable(onClick = onFab),
                         contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Default.Add, "기록 추가", tint = Color.White, modifier = Modifier.size(24.dp)) }
+                    ) { Icon(OloIcons.Add, "기록 추가", tint = Color.White, modifier = Modifier.size(24.dp)) }
                     Spacer(Modifier.height(2.dp))
                     Text("기록", fontSize = 11.sp, color = accent, fontWeight = FontWeight.Bold)
                 }
@@ -490,7 +481,7 @@ private fun AppLockGate(onUnlock: () -> Unit) {
         verticalArrangement = Arrangement.Center,
     ) {
         Box(Modifier.size(84.dp).clip(CircleShape).background(OloColors.AccentContainer), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Lock, null, tint = OloColors.Primary, modifier = Modifier.size(38.dp))
+            Icon(OloIcons.Lock, null, tint = OloColors.Primary, modifier = Modifier.size(38.dp))
         }
         Spacer(Modifier.height(16.dp))
         Text("OLO Cycle 잠금", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = OloColors.Ink)
@@ -498,7 +489,7 @@ private fun AppLockGate(onUnlock: () -> Unit) {
         Text("생체인증 또는 화면 잠금으로 확인하세요.", color = OloColors.Muted, fontSize = 13.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(20.dp))
         Button(onClick = onUnlock, colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary), shape = RoundedCornerShape(22.dp)) {
-            Icon(Icons.Default.Lock, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("잠금 해제", fontWeight = FontWeight.Bold)
+            Icon(OloIcons.Lock, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("잠금 해제", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -1311,7 +1302,7 @@ private fun SettingsScreen(
             // 보안
             SettingsGroup("보안")
             SettingsGroupCard {
-                SettingsIconRow(Icons.Default.Lock, "앱 잠금", "열 때·다른 앱에서 돌아올 때 생체인증/PIN 요구") {
+                SettingsIconRow(OloIcons.Lock, "앱 잠금", "열 때·다른 앱에서 돌아올 때 생체인증/PIN 요구") {
                     Switch(appLockEnabled, onToggleAppLock)
                 }
             }
@@ -1320,7 +1311,7 @@ private fun SettingsScreen(
             SettingsGroup("개인정보")
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = OloColors.AccentContainer)) {
                 Row(Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
-                    Icon(Icons.Default.Shield, null, tint = OloColors.OnAccentContainer, modifier = Modifier.size(20.dp).padding(top = 2.dp))
+                    Icon(OloIcons.Shield, null, tint = OloColors.OnAccentContainer, modifier = Modifier.size(20.dp).padding(top = 2.dp))
                     Spacer(Modifier.width(10.dp))
                     Column {
                         Text("내 데이터는 이 기기에만 있습니다", color = OloColors.OnAccentContainer, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
@@ -1335,10 +1326,10 @@ private fun SettingsScreen(
             // 백업 — 암호화 파일로 내보내고, 그 파일에서 복원. 인터넷 없이 기기 파일로만.
             SettingsGroup("백업")
             SettingsGroupCard {
-                SettingsIconRow(Icons.Default.FileUpload, "암호화 백업 내보내기", "전체 데이터를 암호로 잠근 파일로 저장",
+                SettingsIconRow(OloIcons.Export, "암호화 백업 내보내기", "전체 데이터를 암호로 잠근 파일로 저장",
                     onClick = if (!busy) ({ passExport = true }) else null) { Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted) }
                 HorizontalDivider(color = OloColors.Line, modifier = Modifier.padding(start = 58.dp))
-                SettingsIconRow(Icons.Default.FileDownload, "백업에서 복원", "현재 데이터를 백업 내용으로 대체",
+                SettingsIconRow(OloIcons.Import, "백업에서 복원", "현재 데이터를 백업 내용으로 대체",
                     onClick = if (!busy) ({ onExternalPick(); importLauncher.launch(arrayOf("*/*")) }) else null) { Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted) }
             }
             Text("비밀번호는 복원할 때 반드시 필요합니다. 잊으면 백업을 열 수 없습니다(기기에만 저장, 복구 불가).",
