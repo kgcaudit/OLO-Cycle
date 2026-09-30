@@ -1029,7 +1029,7 @@ private fun MarkerDot(color: Color) {
 
 /** 생리량 물방울. 진하기로 양(1·2·3)을 표현. */
 @Composable
-private fun FlowDrop(intensity: Int) {
+internal fun FlowDrop(intensity: Int) {
     val alpha = when (intensity) { 1 -> 0.5f; 2 -> 0.75f; else -> 1f }
     Canvas(Modifier.size(6.dp, 8.dp)) {
         val w = size.width; val h = size.height
@@ -1743,11 +1743,7 @@ private fun DayRecordDialog(
         }
 
         FieldLabel("생리량")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            FLOW_LABELS.forEachIndexed { i, label ->
-                SelectChip(label, selected = flow == i, color = OloColors.Period) { flow = if (flow == i) null else i }
-            }
-        }
+        FlowDropSelector(selected = flow) { flow = if (flow == it) null else it }
         FieldLabel("증상")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             SYMPTOM_OPTIONS.forEach { s ->
@@ -1772,7 +1768,7 @@ private fun DayRecordDialog(
 
 /** OutlinedTextField 공통 OLO 색상(기본 Material 보라 대신 클레이 강조·아이보리 배경). */
 @Composable
-private fun oloFieldColors() = OutlinedTextFieldDefaults.colors(
+internal fun oloFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = OloColors.Primary,
     unfocusedBorderColor = OloColors.Line,
     cursorColor = OloColors.Primary,
@@ -1783,7 +1779,7 @@ private fun oloFieldColors() = OutlinedTextFieldDefaults.colors(
 )
 
 @Composable
-private fun FieldLabel(text: String, dot: Color? = null) {
+internal fun FieldLabel(text: String, dot: Color? = null) {
     Row(Modifier.padding(top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         if (dot != null) { Box(Modifier.size(7.dp).clip(CircleShape).background(dot)); Spacer(Modifier.width(6.dp)) }
         Text(text, color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -1791,11 +1787,43 @@ private fun FieldLabel(text: String, dot: Color? = null) {
 }
 
 @Composable
-private fun SelectChip(label: String, selected: Boolean, color: Color, onClick: () -> Unit) {
+internal fun SelectChip(label: String, selected: Boolean, color: Color, onClick: () -> Unit) {
     val bg = if (selected) color else OloColors.SurfaceSoft
     val fg = if (selected) Color.White else OloColors.Ink
     Box(
         Modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, if (selected) color else OloColors.Line, RoundedCornerShape(16.dp))
             .background(bg).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
     ) { Text(label, color = fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+}
+
+/**
+ * 생리량 4단계 선택기(없음·적음·보통·많음). 텍스트 칩 대신 물방울 농도로 양을 시각화한다
+ * (없음=빈 원, 1~3=물방울 개수/진하기). 선택 시 로즈 강조.
+ */
+@Composable
+internal fun FlowDropSelector(selected: Int?, onSelect: (Int) -> Unit) {
+    val period = OloColors.Period
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        FLOW_LABELS.forEachIndexed { i, label ->
+            val on = selected == i
+            Column(
+                Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, if (on) period else OloColors.Line, RoundedCornerShape(14.dp))
+                    .background(if (on) period.copy(alpha = 0.12f) else OloColors.SurfaceSoft)
+                    .clickable { onSelect(i) }
+                    .padding(vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(Modifier.height(16.dp), contentAlignment = Alignment.Center) {
+                    if (i == 0) {
+                        Box(Modifier.size(9.dp).clip(CircleShape).border(1.5.dp, OloColors.Outline, CircleShape))
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) { repeat(i) { FlowDrop(i) } }
+                    }
+                }
+                Spacer(Modifier.height(5.dp))
+                Text(label, fontSize = 11.sp, color = if (on) period else OloColors.Ink, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
 }
