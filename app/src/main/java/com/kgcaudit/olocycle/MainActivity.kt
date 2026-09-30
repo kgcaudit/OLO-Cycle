@@ -542,7 +542,7 @@ private fun CycleProgressCard(dayIndex: Int, cycleLength: Int, phase: String, ac
 
 /** 왼쪽에 구성원 색 세로 라인을 둔 카드 — "지금 누구의 내용인지" 한눈에 식별. */
 @Composable
-private fun AccentCard(accent: Color, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+internal fun AccentCard(accent: Color, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     Row(
         Modifier.fillMaxWidth().height(IntrinsicSize.Min).clip(RoundedCornerShape(14.dp))
             .background(OloColors.Surface).border(1.dp, OloColors.Line, RoundedCornerShape(14.dp))
@@ -1141,24 +1141,10 @@ private fun AnalysisTab(state: HomeState, profileColor: Color, onOpenDay: (Local
             }
         }
 
-        // 주기 추이 막대
+        // 주기 추이 차트(기준선·평균 점선·값 라벨·얇은 막대). 실제 부품으로 분리해 구상안·대조가 같은 코드를 쓴다.
         if (state.recentCycleLengths.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
-            AccentCard(profileColor) {
-                Text("최근 주기 길이(일)", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                val maxLen = state.recentCycleLengths.max().coerceAtLeast(1)
-                Row(Modifier.fillMaxWidth().height(100.dp), verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    state.recentCycleLengths.forEach { len ->
-                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("$len", fontSize = 11.sp, color = OloColors.Muted)
-                            Box(Modifier.fillMaxWidth().height((66 * len / maxLen).dp.coerceAtLeast(6.dp))
-                                .clip(RoundedCornerShape(6.dp)).background(profileColor))
-                        }
-                    }
-                }
-            }
+            CycleTrendChart(state.recentCycleLengths, profileColor)
         }
 
         // 다음 예정
@@ -1221,10 +1207,49 @@ private fun AnalysisTab(state: HomeState, profileColor: Color, onOpenDay: (Local
     }
 }
 
+/**
+ * 최근 주기 길이 추이 차트. 기준선 + 평균 점선 + 값 라벨 + 얇은 막대. 막대는 밑변 0 대신 (최소값−2)를
+ * 바닥으로 스케일해 며칠 차이도 눈에 띄게 한다. 구상안·대조가 같은 부품을 쓰도록 분리.
+ */
+@Composable
+internal fun CycleTrendChart(lengths: List<Int>, accent: Color) {
+    AccentCard(accent) {
+        Text("최근 주기 길이(일)", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
+        val maxLen = lengths.max()
+        val minScale = (lengths.min() - 2).coerceAtLeast(1)
+        val denom = (maxLen - minScale).toFloat().coerceAtLeast(1f)
+        val avg = lengths.average().toFloat()
+        Box(Modifier.fillMaxWidth().height(120.dp)) {
+            Canvas(Modifier.fillMaxWidth().height(120.dp)) {
+                val labelH = 16.dp.toPx(); val chartH = size.height - labelH
+                drawLine(OloColors.Line, Offset(0f, chartH), Offset(size.width, chartH), 1.5.dp.toPx())
+                val avgY = chartH - ((avg - minScale) / denom).coerceIn(0f, 1f) * (chartH - 8.dp.toPx())
+                drawLine(OloColors.Muted.copy(alpha = 0.5f), Offset(0f, avgY), Offset(size.width, avgY),
+                    1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+            }
+            Row(Modifier.fillMaxWidth().height(120.dp), verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                lengths.forEach { len ->
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("$len", fontSize = 10.sp, color = OloColors.Muted, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(2.dp))
+                        val frac = ((len - minScale) / denom).coerceIn(0.08f, 1f)
+                        Box(Modifier.width(18.dp).height((84 * frac).dp.coerceAtLeast(8.dp))
+                            .clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp)).background(accent))
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+            }
+        }
+        Text("점선 = 평균 ${avg.toInt()}일", color = OloColors.Muted, fontSize = 10.sp)
+    }
+}
+
 /** 작은 칩 묶음(반복·예측 등). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FlowRowChips(labels: List<String>, accent: Color) {
+internal fun FlowRowChips(labels: List<String>, accent: Color) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         labels.forEach { t ->
             Text(t, Modifier.clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = 0.12f)).padding(9.dp, 4.dp),
@@ -1245,7 +1270,7 @@ private fun recordSummary(rec: com.kgcaudit.olocycle.data.DayRecord): String {
 }
 
 @Composable
-private fun Kpi(modifier: Modifier, value: String, label: String, accent: Color) {
+internal fun Kpi(modifier: Modifier, value: String, label: String, accent: Color) {
     Column(modifier.clip(RoundedCornerShape(12.dp)).background(OloColors.SurfaceSoft).padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text(value, color = accent, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
@@ -1486,7 +1511,7 @@ private fun SettingRow(title: String, onClick: (() -> Unit)? = null) {
 // ---------------------------------------------------------------------------- shared bits
 
 @Composable
-private fun SectionTitle(title: String, subtitle: String) {
+internal fun SectionTitle(title: String, subtitle: String) {
     Column(Modifier.fillMaxWidth().padding(20.dp, 16.dp, 20.dp, 8.dp)) {
         Text(title, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = OloColors.Ink)
         if (subtitle.isNotBlank()) Text(subtitle, color = OloColors.Muted, fontSize = 13.sp)
