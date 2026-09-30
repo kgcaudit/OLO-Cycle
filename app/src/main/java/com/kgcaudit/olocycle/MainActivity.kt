@@ -658,7 +658,7 @@ private fun WeekStrip(state: HomeState, profileColor: Color, onOpenCalendar: () 
 
 // ---------------------------------------------------------------------------- calendar tab
 
-private enum class CalMode { MONTH, YEAR }
+internal enum class CalMode { MONTH, YEAR }
 
 /** 달력 탭: 월/연 전환. 월=큰 달력(칸 정보·스와이프·연월 피커), 연=12개월 패턴 한눈 보기. */
 @Composable
@@ -680,17 +680,11 @@ private fun CalendarTab(
         }
     }
     Column(Modifier.fillMaxSize()) {
-        // 상단 줄: 색 악센트 + 월/연 세그먼트 토글.
-        Row(Modifier.fillMaxWidth().padding(16.dp, 10.dp, 16.dp, 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.height(4.dp).width(46.dp).clip(RoundedCornerShape(3.dp)).background(profileColor))
-            Spacer(Modifier.weight(1f))
-            SegToggle(listOf("월", "연"), if (mode == CalMode.MONTH) 0 else 1, profileColor) {
-                mode = if (it == 0) CalMode.MONTH else CalMode.YEAR
-            }
-        }
         if (mode == CalMode.MONTH) {
+            // 헤더 한 줄: ‹ 2026년 9월 ▾ ›  …  오늘  [월|연]. (군더더기 악센트 바 제거)
             MonthHeader(
                 visibleMonth, profileColor,
+                mode = mode, onSetMode = { mode = it },
                 onPrev = { onSetMonth(visibleMonth.minusMonths(1)) },
                 onNext = { onSetMonth(visibleMonth.plusMonths(1)) },
                 onTitleClick = { showPicker = true },
@@ -719,6 +713,7 @@ private fun CalendarTab(
             YearView(
                 year = visibleMonth.year, today = state.today, profileColor = profileColor,
                 phaseOf = state::phaseOf,
+                mode = mode, onSetMode = { mode = it },
                 onPrevYear = { onSetMonth(visibleMonth.minusYears(1)) },
                 onNextYear = { onSetMonth(visibleMonth.plusYears(1)) },
                 onToday = { onSetMonth(YearMonth.now()) },
@@ -735,7 +730,7 @@ private fun CalendarTab(
 
 /** 작은 세그먼트 토글(월/연 등). */
 @Composable
-private fun SegToggle(items: List<String>, selected: Int, accent: Color, onSelect: (Int) -> Unit) {
+internal fun SegToggle(items: List<String>, selected: Int, accent: Color, onSelect: (Int) -> Unit) {
     Row(Modifier.clip(RoundedCornerShape(9.dp)).background(OloColors.SurfaceSoft).padding(2.dp)) {
         items.forEachIndexed { i, label ->
             val on = i == selected
@@ -752,17 +747,23 @@ private fun SegToggle(items: List<String>, selected: Int, accent: Color, onSelec
 @Composable
 private fun YearView(
     year: Int, today: LocalDate, profileColor: Color, phaseOf: (LocalDate) -> Phase,
+    mode: CalMode, onSetMode: (CalMode) -> Unit,
     onPrevYear: () -> Unit, onNextYear: () -> Unit, onToday: () -> Unit, onPickMonth: (Int) -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(16.dp, 4.dp, 8.dp, 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("${year}년", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = profileColor)
+        // 월 헤더와 같은 구성: ‹ 2026년 ›  …  올해  [월|연].
+        Row(Modifier.fillMaxWidth().padding(8.dp, 6.dp, 12.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onPrevYear, Modifier.size(34.dp)) { Icon(Icons.Default.ChevronLeft, "이전 해", tint = OloColors.Muted, modifier = Modifier.size(22.dp)) }
+            Text("${year}년", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = profileColor, modifier = Modifier.padding(horizontal = 6.dp))
+            IconButton(onNextYear, Modifier.size(34.dp)) { Icon(Icons.Default.ChevronRight, "다음 해", tint = OloColors.Muted, modifier = Modifier.size(22.dp)) }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onToday, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+            TextButton(onClick = onToday, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
                 Text("올해", color = OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
-            IconButton(onPrevYear) { Icon(Icons.Default.ChevronLeft, "이전 해", tint = OloColors.Muted) }
-            IconButton(onNextYear) { Icon(Icons.Default.ChevronRight, "다음 해", tint = OloColors.Muted) }
+            Spacer(Modifier.width(4.dp))
+            SegToggle(listOf("월", "연"), if (mode == CalMode.MONTH) 0 else 1, profileColor) {
+                onSetMode(if (it == 0) CalMode.MONTH else CalMode.YEAR)
+            }
         }
         Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)) {
             (0..3).forEach { row ->
@@ -787,7 +788,7 @@ private fun YearLegend() {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         LegendItem("생리", OloColors.Period)
-        LegendItem("예측", OloColors.PeriodLight)
+        LegendItem("예정", OloColors.PeriodLight)
         LegendItem("가임기", OloColors.FertileLight)
         LegendItem("배란", OloColors.Ovulation)
     }
@@ -882,7 +883,7 @@ private fun MonthYearPickerDialog(
     }
 }
 
-private fun phaseName(p: Phase): String = when (p) {
+internal fun phaseName(p: Phase): String = when (p) {
     Phase.PERIOD -> "생리기"
     Phase.PREDICTED_PERIOD -> "생리 예정"
     Phase.FOLLICULAR -> "난포기"
@@ -894,30 +895,35 @@ private fun phaseName(p: Phase): String = when (p) {
 }
 
 @Composable
-private fun MonthHeader(
+internal fun MonthHeader(
     month: YearMonth, profileColor: Color,
+    mode: CalMode, onSetMode: (CalMode) -> Unit,
     onPrev: () -> Unit, onNext: () -> Unit, onTitleClick: () -> Unit, onToday: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().padding(16.dp, 4.dp, 8.dp, 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        // 제목을 누르면 연·월 피커. 캐럿으로 눌러 고를 수 있음을 표시.
+    // 한 줄: ‹ 2026년 9월 ▾ ›  …  오늘  [월|연]. 화살표가 제목을 감싸고, 월/연 토글이 우측에 들어온다.
+    Row(Modifier.fillMaxWidth().padding(8.dp, 6.dp, 12.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onPrev, Modifier.size(34.dp)) { Icon(Icons.Default.ChevronLeft, "이전 달", tint = OloColors.Muted, modifier = Modifier.size(22.dp)) }
         Row(
             Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onTitleClick).padding(6.dp, 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("${month.year}년 ${month.monthValue}월", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = profileColor)
+            Text("${month.year}년 ${month.monthValue}월", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = profileColor)
             Icon(Icons.Default.ArrowDropDown, "연·월 선택", tint = profileColor, modifier = Modifier.size(22.dp))
         }
+        IconButton(onNext, Modifier.size(34.dp)) { Icon(Icons.Default.ChevronRight, "다음 달", tint = OloColors.Muted, modifier = Modifier.size(22.dp)) }
         Spacer(Modifier.weight(1f))
-        TextButton(onClick = onToday, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+        TextButton(onClick = onToday, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
             Text("오늘", color = OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
-        IconButton(onPrev) { Icon(Icons.Default.ChevronLeft, "이전 달", tint = OloColors.Muted) }
-        IconButton(onNext) { Icon(Icons.Default.ChevronRight, "다음 달", tint = OloColors.Muted) }
+        Spacer(Modifier.width(4.dp))
+        SegToggle(listOf("월", "연"), if (mode == CalMode.MONTH) 0 else 1, profileColor) {
+            onSetMode(if (it == 0) CalMode.MONTH else CalMode.YEAR)
+        }
     }
 }
 
 @Composable
-private fun MonthCalendar(
+internal fun MonthCalendar(
     month: YearMonth, today: LocalDate, profileColor: Color,
     phaseOf: (LocalDate) -> Phase, recordOf: (LocalDate) -> com.kgcaudit.olocycle.data.DayRecord?,
     labelOf: (LocalDate) -> String?,
@@ -930,8 +936,8 @@ private fun MonthCalendar(
         Modifier.then(if (fillHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
             .padding(horizontal = 14.dp, vertical = if (fillHeight) 4.dp else 0.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(profileColor.copy(alpha = 0.05f))
-            .border(2.dp, profileColor.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+            .background(OloColors.Surface)
+            .border(1.dp, OloColors.Line, RoundedCornerShape(16.dp))
             .padding(8.dp),
     ) {
         Row(Modifier.fillMaxWidth()) {
@@ -955,7 +961,7 @@ private fun MonthCalendar(
 }
 
 @Composable
-private fun DayCell(
+internal fun DayCell(
     day: LocalDate, isToday: Boolean, profileColor: Color, phase: Phase,
     record: com.kgcaudit.olocycle.data.DayRecord?, label: String?, enabled: Boolean, onClick: (LocalDate) -> Unit, fill: Boolean = false,
 ) {
@@ -1039,7 +1045,7 @@ private fun FlowDrop(intensity: Int) {
     }
 }
 
-private fun phaseColors(phase: Phase): Pair<Color, Color> = when (phase) {
+internal fun phaseColors(phase: Phase): Pair<Color, Color> = when (phase) {
     Phase.PERIOD -> OloColors.Period to Color.White
     Phase.PREDICTED_PERIOD -> OloColors.PeriodLight to OloColors.Period
     Phase.FERTILE -> OloColors.FertileLight to OloColors.Fertile
@@ -1050,11 +1056,11 @@ private fun phaseColors(phase: Phase): Pair<Color, Color> = when (phase) {
 
 /** 범례 — 각 칸을 실제 달력 칸의 축소판으로 그려 달력 색과 정확히 일치시킨다. */
 @Composable
-private fun PhaseLegend() {
+internal fun PhaseLegend() {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         LegendItem("생리", OloColors.Period)                                   // 꽉 찬 로즈
-        LegendItem("예측", OloColors.PeriodLight, dashBorder = OloColors.Period) // 연분홍 + 점선
+        LegendItem("예정", OloColors.PeriodLight, dashBorder = OloColors.Period) // 연분홍 + 점선
         LegendItem("가임기", OloColors.FertileLight)                           // 연청록
         LegendItem("배란", OloColors.OvulationLight, ring = OloColors.Ovulation) // 연회색 + 고리
     }
@@ -1062,7 +1068,7 @@ private fun PhaseLegend() {
 
 /** 달력 칸과 같은 규칙(채움색·점선 테두리·배란 고리)으로 그린 범례 스와치. */
 @Composable
-private fun LegendItem(label: String, fill: Color, dashBorder: Color? = null, ring: Color? = null) {
+internal fun LegendItem(label: String, fill: Color, dashBorder: Color? = null, ring: Color? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier.size(14.dp).clip(RoundedCornerShape(4.dp)).background(fill).drawBehind {
