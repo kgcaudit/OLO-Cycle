@@ -35,6 +35,9 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions { jvmTarget = "17" }
+
+    // 스크린샷(구상안·대조) 테스트: Robolectric 이 안드로이드 리소스를 쓰게 한다.
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
@@ -57,4 +60,12 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 
     testImplementation("junit:junit:4.13.2")
+
+    // 구상안/대조 스크린샷 렌더(로컬 워크플로우). 실제 앱 부품을 그대로 그려 PNG로 저장한다.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
+    testImplementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
