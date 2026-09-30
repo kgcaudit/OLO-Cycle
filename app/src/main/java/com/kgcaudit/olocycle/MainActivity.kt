@@ -60,11 +60,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -311,7 +308,7 @@ private fun App(vm: HomeViewModel = viewModel()) {
  * 제목 오른쪽에 사각 타일: 활성은 색 배경+2글자 이름으로 확장, 비활성은 사각 아바타 아이콘만. ＋추가, ✎편집, ⚙설정.
  */
 @Composable
-private fun MemberSwitcher(
+internal fun MemberSwitcher(
     tabLabel: String, profiles: List<Profile>, selectedId: Long?,
     onSelect: (Long) -> Unit, onAdd: () -> Unit, onEditCurrent: () -> Unit, onSettings: () -> Unit,
 ) {
@@ -320,19 +317,10 @@ private fun MemberSwitcher(
             Modifier.fillMaxWidth().padding(16.dp, 8.dp, 4.dp, 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 브랜드 워드마크(순환 고리 + OLO Cycle) 위, 화면 이름 아래 2단. 브랜드가 주인공, 화면명은 보조.
-            OloRingMark(size = 22.dp, color = OloColors.Primary)
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(color = OloColors.Primary, fontWeight = FontWeight.ExtraBold)) { append("OLO") }
-                        withStyle(SpanStyle(color = OloColors.Ink, fontWeight = FontWeight.ExtraBold)) { append(" Cycle") }
-                    },
-                    fontSize = 17.sp, lineHeight = 19.sp, maxLines = 1,
-                )
-                Text(tabLabel, color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, lineHeight = 12.sp, maxLines = 1)
-            }
+            // 화면명이 페이지 주 타이틀. 워드마크(OLO Cycle 글자)는 뺐고, 순환 고리만 브랜드 흔적으로 남긴다.
+            OloRingMark(size = 20.dp, color = OloColors.Primary)
+            Spacer(Modifier.width(9.dp))
+            Text(tabLabel, color = OloColors.Ink, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, lineHeight = 24.sp, maxLines = 1)
             Spacer(Modifier.width(10.dp))
             Row(
                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -1062,7 +1050,8 @@ internal fun LegendItem(label: String, fill: Color, dashBorder: Color? = null, r
 @Composable
 private fun AnalysisTab(state: HomeState, profileColor: Color, onOpenDay: (LocalDate) -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        SectionTitle("분석", state.selected?.name?.let { "$it · 주기·증상 리포트" } ?: "")
+        // 화면명 "분석"은 상단 헤더가 주 타이틀로 보여 주므로 본문 제목은 빼고, 어떤 프로필의 리포트인지 부제만 남긴다.
+        state.selected?.name?.let { AnalysisSubtitle("$it · 주기·증상 리포트") }
 
         // 요약 KPI
         val cycle = state.params?.cycleLength
@@ -1511,6 +1500,13 @@ internal fun SectionTitle(title: String, subtitle: String) {
         Text(title, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = OloColors.Ink)
         if (subtitle.isNotBlank()) Text(subtitle, color = OloColors.Muted, fontSize = 13.sp)
     }
+}
+
+/** 화면명을 상단 헤더가 이미 보여 주는 화면(분석)에서, 본문 큰 제목 없이 부제 한 줄만 둔다. */
+@Composable
+internal fun AnalysisSubtitle(subtitle: String) {
+    Text(subtitle, color = OloColors.Muted, fontSize = 13.sp,
+        modifier = Modifier.fillMaxWidth().padding(20.dp, 16.dp, 20.dp, 8.dp))
 }
 
 /**
