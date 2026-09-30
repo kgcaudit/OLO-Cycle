@@ -58,6 +58,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontWeight
@@ -228,41 +229,37 @@ private fun App(vm: HomeViewModel = viewModel()) {
         lastIndex = curIndex
     }
 
-    Column(Modifier.fillMaxSize().background(OloColors.Background)) {
-        MemberSwitcher(
-            tabLabel = tab.label,
-            profiles = state.profiles,
-            selectedId = state.selected?.id,
-            onSelect = vm::select,
-            onAdd = { showAdd = true },
-            onEditCurrent = { state.selected?.let { editProfile = it } },
-            onSettings = { showSettings = true },
-        )
-        Box(
-            Modifier.weight(1f).pointerInput(state.profiles, state.selected?.id) {
-                val threshold = 56.dp.toPx()
-                var total = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { total = 0f },
-                    onDragEnd = {
-                        if (total <= -threshold) switchMember(+1)      // ← 다음 구성원
-                        else if (total >= threshold) switchMember(-1)  // → 이전 구성원
-                    },
-                ) { change, dragAmount -> total += dragAmount; change.consume() }
+    // 반응형: 폭 600dp 이상(폴더블 펼침·태블릿)이면 왼쪽 세로 레일, 미만(휴대폰·커버)이면 하단 바.
+    BoxWithConstraints(Modifier.fillMaxSize().background(OloColors.Background)) {
+        val expanded = maxWidth >= 600.dp
+        ResponsiveNav(
+            expanded = expanded,
+            tab = tab,
+            accent = profileColor,
+            onSelect = { tab = it },
+            onFab = { recordDate = state.today },
+            header = {
+                MemberSwitcher(
+                    tabLabel = tab.label,
+                    profiles = state.profiles,
+                    selectedId = state.selected?.id,
+                    onSelect = vm::select,
+                    onAdd = { showAdd = true },
+                    onEditCurrent = { state.selected?.let { editProfile = it } },
+                    onSettings = { showSettings = true },
+                )
             },
-        ) {
-            Box(Modifier.fillMaxSize().graphicsLayer { translationX = contentOffset.value; alpha = contentAlpha.value }) {
-                when (tab) {
-                    Tab.HOME -> HomeDashboard(state, profileColor,
-                        onOpenCalendar = { tab = Tab.CALENDAR })
-                    Tab.CALENDAR -> CalendarTab(state, profileColor, visibleMonth,
-                        onSetMonth = { visibleMonth = it },
-                        onDayClick = { recordDate = it })
-                    Tab.ANALYSIS -> AnalysisTab(state, profileColor) { recordDate = it }
-                }
-            }
+        ) { contentModifier ->
+            ScreenContent(
+                modifier = contentModifier,
+                state = state, profileColor = profileColor, tab = tab,
+                contentOffset = contentOffset.value, contentAlpha = contentAlpha.value,
+                visibleMonth = visibleMonth, onSetMonth = { visibleMonth = it },
+                onSwitchMember = switchMember,
+                onGoCalendar = { tab = Tab.CALENDAR },
+                onDayClick = { recordDate = it },
+            )
         }
-        BottomBar(tab, profileColor, onSelect = { tab = it }, onFab = { recordDate = state.today })
     }
 
     if (showAdd) {
@@ -376,7 +373,7 @@ private fun OloRingMark(size: Dp, color: Color) {
 @Composable
 internal fun BottomBar(current: Tab, accent: Color, onSelect: (Tab) -> Unit, onFab: () -> Unit) {
     // 3개 뷰 탭(오늘·달력·분석) + 오른쪽 끝에 기록 추가 ＋ 하나. 바 안에 두어 콘텐츠와 겹치지 않는다.
-    Column {
+    Column(Modifier.testTag("bottombar")) {
         HorizontalDivider(color = OloColors.Line)
         Row(Modifier.fillMaxWidth().background(OloColors.Surface).navigationBarsPadding().height(64.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -409,6 +406,118 @@ private fun NavItem(modifier: Modifier, tab: Tab, current: Tab, accent: Color, o
         Spacer(Modifier.height(3.dp))
         Text(tab.label, fontSize = 11.sp, color = if (on) accent else OloColors.Muted,
             fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+/**
+ * 반응형 뼈대: 상단 공통 헤더 아래, 넓은 화면이면 [왼쪽 세로 레일 + 가운데 본문(읽기 좋은 최대폭)],
+ * 좁은 화면이면 [본문 + 하단 바]. 본문은 두 모드가 같은 화면을 그대로 재사용한다(content 슬롯).
+ */
+@Composable
+internal fun ResponsiveNav(
+    expanded: Boolean,
+    tab: Tab,
+    accent: Color,
+    onSelect: (Tab) -> Unit,
+    onFab: () -> Unit,
+    header: @Composable () -> Unit,
+    content: @Composable (Modifier) -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        header()
+        if (expanded) {
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                SideRail(tab, accent, onSelect, onFab)
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+                    content(Modifier.widthIn(max = 600.dp).fillMaxSize())
+                }
+            }
+        } else {
+            content(Modifier.weight(1f).fillMaxWidth())
+            BottomBar(tab, accent, onSelect, onFab)
+        }
+    }
+}
+
+/** 넓은 화면용 왼쪽 세로 내비게이션 레일 — 하단 바와 같은 항목(오늘·달력·분석 + 기록). */
+@Composable
+internal fun SideRail(current: Tab, accent: Color, onSelect: (Tab) -> Unit, onFab: () -> Unit) {
+    Row(Modifier.fillMaxHeight().testTag("rail")) {
+        Column(
+            Modifier.fillMaxHeight().width(88.dp).background(OloColors.Surface).navigationBarsPadding().padding(vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            RailItem(Tab.HOME, current, accent, onSelect)
+            RailItem(Tab.CALENDAR, current, accent, onSelect)
+            RailItem(Tab.ANALYSIS, current, accent, onSelect)
+            Spacer(Modifier.height(10.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    Modifier.size(50.dp).shadow(4.dp, CircleShape).clip(CircleShape).background(accent).clickable(onClick = onFab),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(OloIcons.Add, "기록 추가", tint = Color.White, modifier = Modifier.size(26.dp)) }
+                Spacer(Modifier.height(3.dp))
+                Text("기록", fontSize = 11.sp, color = accent, fontWeight = FontWeight.Bold)
+            }
+        }
+        VerticalDivider(color = OloColors.Line)
+    }
+}
+
+@Composable
+private fun RailItem(tab: Tab, current: Tab, accent: Color, onSelect: (Tab) -> Unit) {
+    val on = tab == current
+    Column(
+        Modifier.clip(RoundedCornerShape(14.dp)).clickable { onSelect(tab) }.padding(vertical = 8.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier.width(56.dp).height(32.dp).clip(RoundedCornerShape(16.dp))
+                .background(if (on) accent.copy(alpha = 0.16f) else Color.Transparent),
+            contentAlignment = Alignment.Center,
+        ) { Icon(tab.icon, tab.label, tint = if (on) accent else OloColors.Muted, modifier = Modifier.size(24.dp)) }
+        Spacer(Modifier.height(3.dp))
+        Text(tab.label, fontSize = 11.sp, color = if (on) accent else OloColors.Muted,
+            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+/** 본문(홈·달력·분석) — 좌우 스와이프로 구성원 이동, 구성원 전환 슬라이드/페이드. 두 모드 공통. */
+@Composable
+internal fun ScreenContent(
+    modifier: Modifier,
+    state: HomeState,
+    profileColor: Color,
+    tab: Tab,
+    contentOffset: Float,
+    contentAlpha: Float,
+    visibleMonth: YearMonth,
+    onSetMonth: (YearMonth) -> Unit,
+    onSwitchMember: (Int) -> Unit,
+    onGoCalendar: () -> Unit,
+    onDayClick: (LocalDate) -> Unit,
+) {
+    Box(
+        modifier.pointerInput(state.profiles, state.selected?.id) {
+            val threshold = 56.dp.toPx()
+            var total = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { total = 0f },
+                onDragEnd = {
+                    if (total <= -threshold) onSwitchMember(+1)      // ← 다음 구성원
+                    else if (total >= threshold) onSwitchMember(-1)  // → 이전 구성원
+                },
+            ) { change, dragAmount -> total += dragAmount; change.consume() }
+        },
+    ) {
+        Box(Modifier.fillMaxSize().graphicsLayer { translationX = contentOffset; alpha = contentAlpha }) {
+            when (tab) {
+                Tab.HOME -> HomeDashboard(state, profileColor, onOpenCalendar = onGoCalendar)
+                Tab.CALENDAR -> CalendarTab(state, profileColor, visibleMonth, onSetMonth = onSetMonth, onDayClick = onDayClick)
+                Tab.ANALYSIS -> AnalysisTab(state, profileColor, onDayClick)
+            }
+        }
     }
 }
 
