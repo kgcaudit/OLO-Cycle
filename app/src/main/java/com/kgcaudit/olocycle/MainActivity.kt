@@ -252,12 +252,14 @@ private fun App(vm: HomeViewModel = viewModel()) {
         ) { contentModifier ->
             ScreenContent(
                 modifier = contentModifier,
-                state = state, profileColor = profileColor, tab = tab,
+                state = state, profileColor = profileColor, tab = tab, expanded = expanded,
                 contentOffset = contentOffset.value, contentAlpha = contentAlpha.value,
                 visibleMonth = visibleMonth, onSetMonth = { visibleMonth = it },
                 onSwitchMember = switchMember,
                 onGoCalendar = { tab = Tab.CALENDAR },
                 onDayClick = { recordDate = it },
+                onSetPeriodStart = { d, on -> vm.setPeriodStart(d, on) },
+                onSaveRecord = { d, flow, sym, mood, temp, memo -> vm.saveDayRecord(d, flow, sym, mood, temp, memo) },
             )
         }
     }
@@ -490,6 +492,7 @@ internal fun ScreenContent(
     state: HomeState,
     profileColor: Color,
     tab: Tab,
+    expanded: Boolean,
     contentOffset: Float,
     contentAlpha: Float,
     visibleMonth: YearMonth,
@@ -497,6 +500,8 @@ internal fun ScreenContent(
     onSwitchMember: (Int) -> Unit,
     onGoCalendar: () -> Unit,
     onDayClick: (LocalDate) -> Unit,
+    onSetPeriodStart: (LocalDate, Boolean) -> Unit = { _, _ -> },
+    onSaveRecord: (LocalDate, Int?, List<String>, String?, Double?, String?) -> Unit = { _, _, _, _, _, _ -> },
 ) {
     Box(
         modifier.pointerInput(state.profiles, state.selected?.id) {
@@ -513,9 +518,10 @@ internal fun ScreenContent(
     ) {
         Box(Modifier.fillMaxSize().graphicsLayer { translationX = contentOffset; alpha = contentAlpha }) {
             when (tab) {
-                Tab.HOME -> HomeDashboard(state, profileColor, onOpenCalendar = onGoCalendar)
-                Tab.CALENDAR -> CalendarTab(state, profileColor, visibleMonth, onSetMonth = onSetMonth, onDayClick = onDayClick)
-                Tab.ANALYSIS -> AnalysisTab(state, profileColor, onDayClick)
+                Tab.HOME -> HomeDashboard(state, profileColor, expanded, onOpenCalendar = onGoCalendar)
+                Tab.CALENDAR -> CalendarTab(state, profileColor, visibleMonth, expanded, onSetMonth = onSetMonth,
+                    onDayClick = onDayClick, onSetPeriodStart = onSetPeriodStart, onSaveRecord = onSaveRecord)
+                Tab.ANALYSIS -> AnalysisTab(state, profileColor, expanded, onDayClick)
             }
         }
     }
@@ -596,15 +602,23 @@ private fun AppLockGate(onUnlock: () -> Unit) {
 /** 홈 = 오늘: 상태 히어로 · 다가오는 일정 · 이번 주. 기록 추가는 하단 ＋ 로 통일(중복 버튼 없음). */
 @Composable
 private fun HomeDashboard(
-    state: HomeState, profileColor: Color, onOpenCalendar: () -> Unit,
+    state: HomeState, profileColor: Color, expanded: Boolean, onOpenCalendar: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(14.dp))
         HeroCard(state, profileColor)
         Spacer(Modifier.height(12.dp))
-        UpcomingCard(state, profileColor)
-        Spacer(Modifier.height(12.dp))
-        WeekStrip(state, profileColor, onOpenCalendar)
+        if (expanded) {
+            // 태블릿: 히어로 아래 [다가오는 일정 | 이번 주] 2열로 넓이를 살린다.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.weight(1f)) { UpcomingCard(state, profileColor) }
+                Box(Modifier.weight(1f)) { WeekStrip(state, profileColor, onOpenCalendar) }
+            }
+        } else {
+            UpcomingCard(state, profileColor)
+            Spacer(Modifier.height(12.dp))
+            WeekStrip(state, profileColor, onOpenCalendar)
+        }
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -663,7 +677,7 @@ internal fun HeroCard(state: HomeState, profileColor: Color) {
 
 /** 다가오는 일정: 다음 생리·배란·가임기와 각 D-day. 좌측 구성원 색 라인. */
 @Composable
-private fun UpcomingCard(state: HomeState, profileColor: Color) {
+internal fun UpcomingCard(state: HomeState, profileColor: Color) {
     val pred = state.prediction ?: return
     val today = state.today
     AccentCard(profileColor) {
@@ -692,7 +706,7 @@ private fun UpcomingRow(color: Color, label: String, date: LocalDate, today: Loc
 
 /** 이번 주 스트립: 일~토, 단계색으로 칠하고 오늘 강조. 누르면 달력 탭으로. 좌측 구성원 색 라인. */
 @Composable
-private fun WeekStrip(state: HomeState, profileColor: Color, onOpenCalendar: () -> Unit) {
+internal fun WeekStrip(state: HomeState, profileColor: Color, onOpenCalendar: () -> Unit) {
     val today = state.today
     val sunday = today.minusDays((today.dayOfWeek.value % 7).toLong())
     AccentCard(profileColor, onClick = onOpenCalendar) {
@@ -733,11 +747,13 @@ internal enum class CalMode { MONTH, YEAR }
 /** 달력 탭: 월/연 전환. 월=큰 달력(칸 정보·스와이프·연월 피커), 연=12개월 패턴 한눈 보기. */
 @Composable
 private fun CalendarTab(
-    state: HomeState, profileColor: Color, visibleMonth: YearMonth,
+    state: HomeState, profileColor: Color, visibleMonth: YearMonth, expanded: Boolean,
     onSetMonth: (YearMonth) -> Unit, onDayClick: (LocalDate) -> Unit,
+    onSetPeriodStart: (LocalDate, Boolean) -> Unit, onSaveRecord: (LocalDate, Int?, List<String>, String?, Double?, String?) -> Unit,
 ) {
     var mode by remember { mutableStateOf(CalMode.MONTH) }
     var showPicker by remember { mutableStateOf(false) }
+    var selectedDay by remember { mutableStateOf<LocalDate?>(state.today) } // 태블릿 오른쪽 패널이 보여 줄 날
     val density = LocalDensity.current
     val gridOffset = remember { Animatable(0f) }
     var lastMonth by remember { mutableStateOf(visibleMonth) }
@@ -749,48 +765,70 @@ private fun CalendarTab(
             gridOffset.animateTo(0f, tween(260))
         }
     }
-    Column(Modifier.fillMaxSize()) {
-        if (mode == CalMode.MONTH) {
-            // 헤더 한 줄: ‹ 2026년 9월 ▾ ›  …  오늘  [월|연]. (군더더기 악센트 바 제거)
-            MonthHeader(
-                visibleMonth, profileColor,
-                mode = mode, onSetMode = { mode = it },
-                onPrev = { onSetMonth(visibleMonth.minusMonths(1)) },
-                onNext = { onSetMonth(visibleMonth.plusMonths(1)) },
-                onTitleClick = { showPicker = true },
-                onToday = { onSetMonth(YearMonth.now()) },
-            )
-            Box(
-                Modifier.fillMaxWidth().weight(1f).pointerInput(visibleMonth) {
-                    val threshold = 56.dp.toPx()
-                    var total = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { total = 0f },
-                        onDragEnd = {
-                            if (total <= -threshold) onSetMonth(visibleMonth.plusMonths(1))
-                            else if (total >= threshold) onSetMonth(visibleMonth.minusMonths(1))
-                        },
-                    ) { change, dragAmount -> total += dragAmount; change.consume() }
-                },
-            ) {
-                Box(Modifier.fillMaxSize().graphicsLayer { translationX = gridOffset.value }) {
-                    MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::recordOf,
-                        state::calendarCellLabel, enabled = state.selected != null, onDayClick = onDayClick, fillHeight = true)
+
+    // 달력 본체(월/연). 날짜를 누르면: 휴대폰=다이얼로그, 태블릿=오른쪽 패널 갱신.
+    @Composable
+    fun CalendarBody(modifier: Modifier, dayClick: (LocalDate) -> Unit) {
+        Column(modifier) {
+            if (mode == CalMode.MONTH) {
+                MonthHeader(
+                    visibleMonth, profileColor,
+                    mode = mode, onSetMode = { mode = it },
+                    onPrev = { onSetMonth(visibleMonth.minusMonths(1)) },
+                    onNext = { onSetMonth(visibleMonth.plusMonths(1)) },
+                    onTitleClick = { showPicker = true },
+                    onToday = { onSetMonth(YearMonth.now()) },
+                )
+                Box(
+                    Modifier.fillMaxWidth().weight(1f).pointerInput(visibleMonth) {
+                        val threshold = 56.dp.toPx()
+                        var total = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { total = 0f },
+                            onDragEnd = {
+                                if (total <= -threshold) onSetMonth(visibleMonth.plusMonths(1))
+                                else if (total >= threshold) onSetMonth(visibleMonth.minusMonths(1))
+                            },
+                        ) { change, dragAmount -> total += dragAmount; change.consume() }
+                    },
+                ) {
+                    Box(Modifier.fillMaxSize().graphicsLayer { translationX = gridOffset.value }) {
+                        MonthCalendar(visibleMonth, state.today, profileColor, state::phaseOf, state::recordOf,
+                            state::calendarCellLabel, enabled = state.selected != null, onDayClick = dayClick, fillHeight = true)
+                    }
                 }
+                Box(Modifier.padding(bottom = 8.dp)) { PhaseLegend() }
+            } else {
+                YearView(
+                    year = visibleMonth.year, today = state.today, profileColor = profileColor,
+                    phaseOf = state::phaseOf,
+                    mode = mode, onSetMode = { mode = it },
+                    onPrevYear = { onSetMonth(visibleMonth.minusYears(1)) },
+                    onNextYear = { onSetMonth(visibleMonth.plusYears(1)) },
+                    onToday = { onSetMonth(YearMonth.now()) },
+                    onPickMonth = { m -> onSetMonth(YearMonth.of(visibleMonth.year, m)); mode = CalMode.MONTH },
+                )
             }
-            Box(Modifier.padding(bottom = 8.dp)) { PhaseLegend() }
-        } else {
-            YearView(
-                year = visibleMonth.year, today = state.today, profileColor = profileColor,
-                phaseOf = state::phaseOf,
-                mode = mode, onSetMode = { mode = it },
-                onPrevYear = { onSetMonth(visibleMonth.minusYears(1)) },
-                onNextYear = { onSetMonth(visibleMonth.plusYears(1)) },
-                onToday = { onSetMonth(YearMonth.now()) },
-                onPickMonth = { m -> onSetMonth(YearMonth.of(visibleMonth.year, m)); mode = CalMode.MONTH },
-            )
         }
     }
+
+    if (expanded) {
+        // 태블릿: [달력 | 선택한 날 상세] 마스터-디테일. 날짜를 누르면 오른쪽에서 바로 편집.
+        Row(Modifier.fillMaxSize()) {
+            CalendarBody(Modifier.weight(1.5f).fillMaxHeight()) { selectedDay = it }
+            VerticalDivider(color = OloColors.Line)
+            DayDetailPanel(
+                modifier = Modifier.weight(1f).fillMaxHeight().padding(12.dp),
+                date = selectedDay,
+                isPeriodStart = selectedDay?.let { state.isPeriodStart(it) } ?: false,
+                existing = selectedDay?.let { state.recordOf(it) },
+                onSave = { d, ps, flow, sym, mood, temp, memo -> onSetPeriodStart(d, ps); onSaveRecord(d, flow, sym, mood, temp, memo) },
+            )
+        }
+    } else {
+        CalendarBody(Modifier.fillMaxSize(), onDayClick)
+    }
+
     if (showPicker) {
         MonthYearPickerDialog(visibleMonth, profileColor, state.today,
             onPick = { onSetMonth(it); showPicker = false },
@@ -1157,107 +1195,150 @@ internal fun LegendItem(label: String, fill: Color, dashBorder: Color? = null, r
 
 /** 분석 = 요약 KPI · 증상 인사이트 · 주기 추이 · 다음 예정 · 주기 히스토리 · 기록한 날. */
 @Composable
-private fun AnalysisTab(state: HomeState, profileColor: Color, onOpenDay: (LocalDate) -> Unit) {
+private fun AnalysisTab(state: HomeState, profileColor: Color, expanded: Boolean, onOpenDay: (LocalDate) -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         // 화면명 "분석"은 상단 헤더가 주 타이틀로 보여 주므로 본문 제목은 빼고, 어떤 프로필의 리포트인지 부제만 남긴다.
         state.selected?.name?.let { AnalysisSubtitle("$it · 주기·증상 리포트") }
 
-        // 요약 KPI
-        val cycle = state.params?.cycleLength
-        val period = state.params?.periodLength
-        val regularity = when {
-            state.recentCycleLengths.size < 2 -> "기록 부족"
-            (state.recentCycleLengths.max() - state.recentCycleLengths.min()) <= 3 -> "규칙적"
-            else -> "불규칙"
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Kpi(Modifier.weight(1f), cycle?.let { "${it}일" } ?: "-", "평균 주기", profileColor)
-            Kpi(Modifier.weight(1f), period?.let { "${it}일" } ?: "-", "평균 생리", profileColor)
-            Kpi(Modifier.weight(1f), regularity, "규칙성", profileColor)
-        }
+        // 요약 KPI(전폭) + 안내
+        AnalysisKpiRow(state, profileColor)
         if (!state.isPersonalized) {
             Text("생리 시작을 3회 이상 기록하면 개인 평균으로 예측이 정확해집니다.",
                 Modifier.padding(4.dp, 8.dp), color = OloColors.Muted, fontSize = 12.sp)
         }
 
-        // 증상 인사이트 ⑤ — 자주/반복/예측
-        val symptoms = state.symptomStats()
-        if (symptoms.isNotEmpty()) {
+        if (expanded) {
+            // 태블릿: KPI 아래를 [증상·추이·다음예정 | 히스토리·기록목록] 2열로 나눈다.
             Spacer(Modifier.height(14.dp))
-            AccentCard(profileColor) {
-                Text("증상 인사이트", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Text("자주 나타나는 증상", color = OloColors.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(6.dp))
-                symptoms.take(4).forEach { s ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(s.name, Modifier.width(60.dp), color = OloColors.Ink, fontSize = 12.5.sp, maxLines = 1)
-                        Box(Modifier.weight(1f).height(9.dp).clip(RoundedCornerShape(5.dp)).background(OloColors.SurfaceSoft)) {
-                            Box(Modifier.fillMaxHeight().fillMaxWidth(s.percent / 100f).clip(RoundedCornerShape(5.dp)).background(OloColors.Amber))
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text("${s.percent}%", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    AnalysisSymptomCard(state, profileColor)
+                    AnalysisTrendCard(state, profileColor)
+                    AnalysisNextCard(state, profileColor)
                 }
-                val cycles = state.recordedCycleCount()
-                val recurring = symptoms.filter { it.cyclesSeen >= minOf(3, maxOf(2, cycles)) }
-                if (recurring.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    FlowRowChips(
-                        recurring.take(3).map { "반복 · ${it.name}(${it.cyclesSeen}주기)" } +
-                            recurring.take(2).map { "예측 · 다음 주기 ${it.name} 가능" },
-                        profileColor,
-                    )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    AnalysisHistoryCard(state)
+                    AnalysisLoggedDays(state, onOpenDay)
                 }
             }
-        }
-
-        // 주기 추이 차트(기준선·평균 점선·값 라벨·얇은 막대). 실제 부품으로 분리해 구상안·대조가 같은 코드를 쓴다.
-        if (state.recentCycleLengths.isNotEmpty()) {
+        } else {
+            AnalysisSymptomCard(state, profileColor, topSpace = true)
+            AnalysisTrendCard(state, profileColor, topSpace = true)
+            AnalysisNextCard(state, profileColor, topSpace = true)
             Spacer(Modifier.height(14.dp))
-            CycleTrendChart(state.recentCycleLengths, profileColor)
-        }
-
-        // 다음 예정
-        state.prediction?.let {
+            AnalysisHistoryCard(state)
             Spacer(Modifier.height(14.dp))
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = profileColor.copy(alpha = 0.10f))) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("다음 생리 예정", color = OloColors.Muted, fontSize = 12.sp)
-                    Text("${it.nextPeriodStart.monthValue}월 ${it.nextPeriodStart.dayOfMonth}일" +
-                        (state.daysUntilNextPeriod?.let { d -> " (D-$d)" } ?: ""),
-                        color = OloColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("배란 예정 ${it.ovulation.monthValue}/${it.ovulation.dayOfMonth} · 가임기 ${it.fertileStart.monthValue}/${it.fertileStart.dayOfMonth}~${it.fertileEnd.dayOfMonth}",
-                        color = OloColors.Muted, fontSize = 12.sp)
+            AnalysisLoggedDays(state, onOpenDay)
+        }
+        Spacer(Modifier.height(20.dp))
+    }
+}
+
+@Composable
+private fun AnalysisKpiRow(state: HomeState, profileColor: Color) {
+    val cycle = state.params?.cycleLength
+    val period = state.params?.periodLength
+    val regularity = when {
+        state.recentCycleLengths.size < 2 -> "기록 부족"
+        (state.recentCycleLengths.max() - state.recentCycleLengths.min()) <= 3 -> "규칙적"
+        else -> "불규칙"
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Kpi(Modifier.weight(1f), cycle?.let { "${it}일" } ?: "-", "평균 주기", profileColor)
+        Kpi(Modifier.weight(1f), period?.let { "${it}일" } ?: "-", "평균 생리", profileColor)
+        Kpi(Modifier.weight(1f), regularity, "규칙성", profileColor)
+    }
+}
+
+/** 증상 인사이트 — 자주/반복/예측. 기록이 없으면 아무것도 그리지 않는다. */
+@Composable
+private fun AnalysisSymptomCard(state: HomeState, profileColor: Color, topSpace: Boolean = false) {
+    val symptoms = state.symptomStats()
+    if (symptoms.isEmpty()) return
+    if (topSpace) Spacer(Modifier.height(14.dp))
+    AccentCard(profileColor) {
+        Text("증상 인사이트", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text("자주 나타나는 증상", color = OloColors.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        symptoms.take(4).forEach { s ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(s.name, Modifier.width(60.dp), color = OloColors.Ink, fontSize = 12.5.sp, maxLines = 1)
+                Box(Modifier.weight(1f).height(9.dp).clip(RoundedCornerShape(5.dp)).background(OloColors.SurfaceSoft)) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(s.percent / 100f).clip(RoundedCornerShape(5.dp)).background(OloColors.Amber))
                 }
+                Spacer(Modifier.width(8.dp))
+                Text("${s.percent}%", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
+        val cycles = state.recordedCycleCount()
+        val recurring = symptoms.filter { it.cyclesSeen >= minOf(3, maxOf(2, cycles)) }
+        if (recurring.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            FlowRowChips(
+                recurring.take(3).map { "반복 · ${it.name}(${it.cyclesSeen}주기)" } +
+                    recurring.take(2).map { "예측 · 다음 주기 ${it.name} 가능" },
+                profileColor,
+            )
+        }
+    }
+}
 
-        // 주기 히스토리 표
-        val history = state.periodHistory()
-        if (history.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            Text("주기 히스토리", Modifier.padding(4.dp, 0.dp, 4.dp, 6.dp), color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(12.dp))) {
-                Row(Modifier.fillMaxWidth().background(OloColors.SurfaceSoft).padding(14.dp, 9.dp)) {
-                    Text("생리 구간 (기간)", Modifier.weight(1f), color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text("주기", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+/** 주기 추이 차트. 기록이 없으면 그리지 않는다. */
+@Composable
+private fun AnalysisTrendCard(state: HomeState, profileColor: Color, topSpace: Boolean = false) {
+    if (state.recentCycleLengths.isEmpty()) return
+    if (topSpace) Spacer(Modifier.height(14.dp))
+    CycleTrendChart(state.recentCycleLengths, profileColor)
+}
+
+/** 다음 생리 예정 카드. 예측이 없으면 그리지 않는다. */
+@Composable
+private fun AnalysisNextCard(state: HomeState, profileColor: Color, topSpace: Boolean = false) {
+    val pred = state.prediction ?: return
+    if (topSpace) Spacer(Modifier.height(14.dp))
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = profileColor.copy(alpha = 0.10f))) {
+        Column(Modifier.padding(16.dp)) {
+            Text("다음 생리 예정", color = OloColors.Muted, fontSize = 12.sp)
+            Text("${pred.nextPeriodStart.monthValue}월 ${pred.nextPeriodStart.dayOfMonth}일" +
+                (state.daysUntilNextPeriod?.let { d -> " (D-$d)" } ?: ""),
+                color = OloColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+            Text("배란 예정 ${pred.ovulation.monthValue}/${pred.ovulation.dayOfMonth} · 가임기 ${pred.fertileStart.monthValue}/${pred.fertileStart.dayOfMonth}~${pred.fertileEnd.dayOfMonth}",
+                color = OloColors.Muted, fontSize = 12.sp)
+        }
+    }
+}
+
+/** 주기 히스토리 표. 없으면 그리지 않는다. */
+@Composable
+private fun AnalysisHistoryCard(state: HomeState) {
+    val history = state.periodHistory()
+    if (history.isEmpty()) return
+    Column(Modifier.fillMaxWidth()) {
+        Text("주기 히스토리", Modifier.padding(4.dp, 0.dp, 4.dp, 6.dp), color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(12.dp))) {
+            Row(Modifier.fillMaxWidth().background(OloColors.SurfaceSoft).padding(14.dp, 9.dp)) {
+                Text("생리 구간 (기간)", Modifier.weight(1f), color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("주기", color = OloColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            history.take(12).forEach { h ->
+                val days = (h.end.toEpochDay() - h.start.toEpochDay() + 1).toInt()
+                Row(Modifier.fillMaxWidth().padding(14.dp, 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("%02d.%02d ~ %02d.%02d (%d일)".format(h.start.monthValue, h.start.dayOfMonth, h.end.monthValue, h.end.dayOfMonth, days),
+                        Modifier.weight(1f), color = OloColors.Ink, fontSize = 13.sp)
+                    Text(h.cycleLength?.let { "${it}일" } ?: "—", color = OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
-                history.take(12).forEach { h ->
-                    val days = (h.end.toEpochDay() - h.start.toEpochDay() + 1).toInt()
-                    Row(Modifier.fillMaxWidth().padding(14.dp, 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("%02d.%02d ~ %02d.%02d (%d일)".format(h.start.monthValue, h.start.dayOfMonth, h.end.monthValue, h.end.dayOfMonth, days),
-                            Modifier.weight(1f), color = OloColors.Ink, fontSize = 13.sp)
-                        Text(h.cycleLength?.let { "${it}일" } ?: "—", color = OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
-                    HorizontalDivider(color = OloColors.Line)
-                }
+                HorizontalDivider(color = OloColors.Line)
             }
         }
+    }
+}
 
-        // 기록한 날 목록
-        val days = state.loggedDays()
-        Spacer(Modifier.height(14.dp))
+/** 기록한 날 목록. */
+@Composable
+private fun AnalysisLoggedDays(state: HomeState, onOpenDay: (LocalDate) -> Unit) {
+    val days = state.loggedDays()
+    Column(Modifier.fillMaxWidth()) {
         Text("기록한 날 · ${days.size}일", Modifier.padding(4.dp, 0.dp, 4.dp, 6.dp), color = OloColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         if (days.isEmpty()) {
             Text("아래 ＋ 버튼이나 달력 날짜를 눌러 기록을 남겨 보세요.", Modifier.padding(4.dp, 4.dp), color = OloColors.Muted, fontSize = 13.sp)
@@ -1274,7 +1355,6 @@ private fun AnalysisTab(state: HomeState, profileColor: Color, onOpenDay: (Local
                 }
             }
         }
-        Spacer(Modifier.height(20.dp))
     }
 }
 
@@ -1796,7 +1876,64 @@ private val FLOW_LABELS = listOf("없음", "적음", "보통", "많음")
 private val SYMPTOM_OPTIONS = listOf("복통", "두통", "허리통증", "부종", "여드름", "피로", "메스꺼움", "유방통")
 private val MOOD_OPTIONS = listOf("좋음", "평온", "예민", "우울", "불안")
 
+/** 그날 기록 편집 상태 — 다이얼로그(휴대폰)와 인라인 패널(태블릿)이 같은 입력을 공유하도록 홀더로 뺐다. */
+internal class DayRecordEditState(isPeriodStart: Boolean, existing: com.kgcaudit.olocycle.data.DayRecord?) {
+    var periodStart by mutableStateOf(isPeriodStart)
+    var flow by mutableStateOf(existing?.flow)
+    val symptoms = mutableStateListOf<String>().apply {
+        existing?.symptoms?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.let { addAll(it) }
+    }
+    var mood by mutableStateOf(existing?.mood)
+    var temperature by mutableStateOf(existing?.temperature?.toString() ?: "")
+    var memo by mutableStateOf(existing?.memo ?: "")
+}
+
+@Composable
+internal fun rememberDayRecordEditState(date: LocalDate, isPeriodStart: Boolean, existing: com.kgcaudit.olocycle.data.DayRecord?) =
+    remember(date, isPeriodStart, existing) { DayRecordEditState(isPeriodStart, existing) }
+
+/** 그날 기록 입력 필드(생리 시작일·생리량·증상·기분·체온·메모). 다이얼로그와 인라인 패널 공용. */
 @OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun DayRecordFields(st: DayRecordEditState) {
+    // 생리 시작일 토글: 켜면 예측 기준이 이 날로 갱신된다. 강조 카드로 다른 입력과 구분.
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(OloColors.AccentContainer)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("생리 시작일", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = OloColors.OnAccentContainer)
+            Text("켜면 이 날 기준으로 예측이 갱신돼요.", color = OloColors.OnAccentContainer.copy(alpha = 0.75f), fontSize = 11.sp)
+        }
+        Switch(
+            st.periodStart, { st.periodStart = it },
+            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = OloColors.Primary),
+        )
+    }
+
+    FieldLabel("생리량")
+    FlowDropSelector(selected = st.flow) { st.flow = if (st.flow == it) null else it }
+    FieldLabel("증상")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        SYMPTOM_OPTIONS.forEach { s ->
+            SelectChip(s, selected = s in st.symptoms, color = OloColors.Amber) { if (s in st.symptoms) st.symptoms.remove(s) else st.symptoms.add(s) }
+        }
+    }
+    FieldLabel("기분")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        MOOD_OPTIONS.forEach { m ->
+            SelectChip(m, selected = st.mood == m, color = OloColors.Fertile) { st.mood = if (st.mood == m) null else m }
+        }
+    }
+    FieldLabel("기초체온 (℃)")
+    OutlinedTextField(st.temperature, { st.temperature = it }, singleLine = true, placeholder = { Text("예: 36.6") },
+        modifier = Modifier.fillMaxWidth(), colors = oloFieldColors())
+    FieldLabel("메모")
+    OutlinedTextField(st.memo, { st.memo = it }, modifier = Modifier.fillMaxWidth(), minLines = 3,
+        placeholder = { Text("자유롭게 남겨요") }, colors = oloFieldColors())
+}
+
 @Composable
 private fun DayRecordDialog(
     date: LocalDate,
@@ -1806,63 +1943,57 @@ private fun DayRecordDialog(
     onSetPeriodStart: (Boolean) -> Unit,
     onSave: (flow: Int?, symptoms: List<String>, mood: String?, temperature: Double?, memo: String?) -> Unit,
 ) {
-    var periodStart by remember { mutableStateOf(isPeriodStart) }
-    var flow by remember { mutableStateOf(existing?.flow) }
-    val symptoms = remember {
-        mutableStateListOf<String>().apply {
-            existing?.symptoms?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.let { addAll(it) }
-        }
-    }
-    var mood by remember { mutableStateOf(existing?.mood) }
-    var temperature by remember { mutableStateOf(existing?.temperature?.toString() ?: "") }
-    var memo by remember { mutableStateOf(existing?.memo ?: "") }
-
+    val st = rememberDayRecordEditState(date, isPeriodStart, existing)
     OloDialog(
         title = "${date.monthValue}월 ${date.dayOfMonth}일 기록",
         onDismiss = onDismiss,
         confirmLabel = "저장",
         onConfirm = {
-            onSetPeriodStart(periodStart)
-            onSave(flow, symptoms.toList(), mood, temperature.toDoubleOrNull(), memo)
+            onSetPeriodStart(st.periodStart)
+            onSave(st.flow, st.symptoms.toList(), st.mood, st.temperature.toDoubleOrNull(), st.memo)
         },
     ) {
-        // 생리 시작일 토글: 켜면 예측 기준이 이 날로 갱신된다. 강조 카드로 다른 입력과 구분.
-        Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(OloColors.AccentContainer)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("생리 시작일", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = OloColors.OnAccentContainer)
-                Text("켜면 이 날 기준으로 예측이 갱신돼요.", color = OloColors.OnAccentContainer.copy(alpha = 0.75f), fontSize = 11.sp)
-            }
-            Switch(
-                periodStart, { periodStart = it },
-                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = OloColors.Primary),
-            )
-        }
-
-        FieldLabel("생리량")
-        FlowDropSelector(selected = flow) { flow = if (flow == it) null else it }
-        FieldLabel("증상")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            SYMPTOM_OPTIONS.forEach { s ->
-                SelectChip(s, selected = s in symptoms, color = OloColors.Amber) { if (s in symptoms) symptoms.remove(s) else symptoms.add(s) }
-            }
-        }
-        FieldLabel("기분")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            MOOD_OPTIONS.forEach { m ->
-                SelectChip(m, selected = mood == m, color = OloColors.Fertile) { mood = if (mood == m) null else m }
-            }
-        }
-        FieldLabel("기초체온 (℃)")
-        OutlinedTextField(temperature, { temperature = it }, singleLine = true, placeholder = { Text("예: 36.6") },
-            modifier = Modifier.fillMaxWidth(), colors = oloFieldColors())
-        FieldLabel("메모")
-        OutlinedTextField(memo, { memo = it }, modifier = Modifier.fillMaxWidth(), minLines = 3,
-            placeholder = { Text("자유롭게 남겨요") }, colors = oloFieldColors())
+        DayRecordFields(st)
         Spacer(Modifier.height(4.dp))
+    }
+}
+
+/**
+ * 태블릿 마스터-디테일용 인라인 기록 패널 — 달력 오른쪽에서 선택한 날을 다이얼로그 없이 바로 편집.
+ * 날짜가 없으면 안내만 보인다. 저장을 누르면 생리 시작일 갱신 + 기록 저장을 한 번에 한다.
+ */
+@Composable
+internal fun DayDetailPanel(
+    modifier: Modifier,
+    date: LocalDate?,
+    isPeriodStart: Boolean,
+    existing: com.kgcaudit.olocycle.data.DayRecord?,
+    onSave: (LocalDate, Boolean, Int?, List<String>, String?, Double?, String?) -> Unit,
+) {
+    Column(
+        modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(16.dp)).background(OloColors.Surface),
+    ) {
+        if (date == null) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                Text("날짜를 선택하면\n여기서 바로 기록해요", color = OloColors.Muted, fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+            }
+            return
+        }
+        val st = rememberDayRecordEditState(date, isPeriodStart, existing)
+        Row(Modifier.fillMaxWidth().padding(16.dp, 14.dp, 12.dp, 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${date.monthValue}월 ${date.dayOfMonth}일 기록", Modifier.weight(1f),
+                color = OloColors.Ink, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+            Button(
+                onClick = { onSave(date, st.periodStart, st.flow, st.symptoms.toList(), st.mood, st.temperature.toDoubleOrNull(), st.memo) },
+                colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+            ) { Text("저장", color = Color.White, fontWeight = FontWeight.Bold) }
+        }
+        HorizontalDivider(color = OloColors.Line)
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp, 8.dp, 16.dp, 16.dp)) {
+            DayRecordFields(st)
+        }
     }
 }
 
