@@ -819,8 +819,9 @@ private fun CalendarTab(
         Row(Modifier.fillMaxSize()) {
             CalendarBody(Modifier.weight(1.5f).fillMaxHeight()) { selectedDay = it }
             VerticalDivider(color = OloColors.Line)
+            // 기록 패널도 세로로 늘이지 않고 내용 높이에 맞춘다(상단 정렬, 넘치면 스크롤).
             DayDetailPanel(
-                modifier = Modifier.weight(1f).fillMaxHeight().padding(12.dp),
+                modifier = Modifier.weight(1f).padding(12.dp),
                 date = selectedDay,
                 isPeriodStart = selectedDay?.let { state.isPeriodStart(it) } ?: false,
                 existing = selectedDay?.let { state.recordOf(it) },
@@ -855,7 +856,7 @@ internal fun SegToggle(items: List<String>, selected: Int, accent: Color, onSele
 
 /** 연(年) 달력: 12개월을 3열로 채워 생리/예측/가임/배란 패턴을 한눈에. 월을 누르면 그 달의 월간 달력으로. */
 @Composable
-private fun YearView(
+internal fun YearView(
     year: Int, today: LocalDate, profileColor: Color, phaseOf: (LocalDate) -> Phase,
     mode: CalMode, onSetMode: (CalMode) -> Unit,
     onPrevYear: () -> Unit, onNextYear: () -> Unit, onToday: () -> Unit, onPickMonth: (Int) -> Unit,
@@ -875,12 +876,13 @@ private fun YearView(
                 onSetMode(if (it == 0) CalMode.MONTH else CalMode.YEAR)
             }
         }
-        Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)) {
+        // 미니 달력을 세로로 늘이지 않고 정사각 칸의 자연 높이로 둔다. 넘치면 스크롤(스트레치 대신).
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
             (0..3).forEach { row ->
-                Row(Modifier.fillMaxWidth().weight(1f)) {
+                Row(Modifier.fillMaxWidth()) {
                     (1..3).forEach { col ->
                         val m = row * 3 + col
-                        Box(Modifier.weight(1f).fillMaxHeight().padding(5.dp)) {
+                        Box(Modifier.weight(1f).padding(5.dp)) {
                             MiniMonth(YearMonth.of(year, m), today, profileColor, phaseOf) { onPickMonth(m) }
                         }
                     }
@@ -906,18 +908,21 @@ private fun YearLegend() {
 
 /** 연 달력의 한 달 미니 그리드. */
 @Composable
-private fun MiniMonth(month: YearMonth, today: LocalDate, profileColor: Color, phaseOf: (LocalDate) -> Phase, onClick: () -> Unit) {
+internal fun MiniMonth(month: YearMonth, today: LocalDate, profileColor: Color, phaseOf: (LocalDate) -> Phase, onClick: () -> Unit) {
     val leading = month.atDay(1).dayOfWeek.value % 7
-    val cells = (0 until leading).map<Int, LocalDate?> { null } + (1..month.lengthOfMonth()).map { month.atDay(it) }
+    val days = (0 until leading).map<Int, LocalDate?> { null } + (1..month.lengthOfMonth()).map { month.atDay(it) }
+    // 6주(42칸)로 채워 모든 달의 높이를 같게 → 연 뷰 격자가 세로로 늘지 않고 가지런하다.
+    val cells = days + List(42 - days.size) { null }
     Column(
-        Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(OloColors.Surface)
+        // 세로로 늘이지 않는다: 미니 칸을 정사각형으로 두고, 미니 달력은 내용 높이에 맞춘다.
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(OloColors.Surface)
             .border(1.dp, OloColors.Line, RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(6.dp, 5.dp),
     ) {
         Text("${month.monthValue}월", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = profileColor)
         Spacer(Modifier.height(3.dp))
-        Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(1.5.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(1.5.dp)) {
             cells.chunked(7).forEach { week ->
-                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(1.5.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.5.dp)) {
                     week.forEach { day ->
                         // 오늘은 구성원색 solid 칸으로(연 뷰에선 숫자가 없으므로 꽉 채워 또렷하게).
                         val c = when {
@@ -925,9 +930,8 @@ private fun MiniMonth(month: YearMonth, today: LocalDate, profileColor: Color, p
                             day == today -> profileColor
                             else -> miniColor(phaseOf(day))
                         }
-                        Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(c))
+                        Box(Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(2.dp)).background(c))
                     }
-                    repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
@@ -1976,7 +1980,7 @@ internal fun DayDetailPanel(
         modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(16.dp)).background(OloColors.Surface),
     ) {
         if (date == null) {
-            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 160.dp).padding(24.dp), contentAlignment = Alignment.Center) {
                 Text("날짜를 선택하면\n여기서 바로 기록해요", color = OloColors.Muted, fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
             }

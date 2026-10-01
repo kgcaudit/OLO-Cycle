@@ -1,11 +1,17 @@
 package com.kgcaudit.olocycle.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import com.kgcaudit.olocycle.DayDetailPanel
 import com.kgcaudit.olocycle.ui.theme.OloTheme
 import org.junit.Assert.assertEquals
@@ -68,5 +74,20 @@ class DayDetailPanelTest {
         rule.onNodeWithText("저장").performClick()
         assertTrue("저장을 누르면 onSave 가 불려야 한다", savedDate != null)
         assertEquals(target, savedDate)
+    }
+
+    @Test
+    fun empty_panel_is_content_sized_not_stretched() {
+        // 세로로 큰(800dp) 부모 안에서도 빈 패널은 내용 높이(≈160dp)로 남고, 인위적으로 늘지 않는다.
+        rule.setContent {
+            OloTheme {
+                Box(Modifier.height(800.dp)) {
+                    DayDetailPanel(Modifier.testTag("panel"), null, false, null) { _, _, _, _, _, _, _ -> }
+                }
+            }
+        }
+        val b = rule.onNodeWithTag("panel").getUnclippedBoundsInRoot()
+        val h = b.bottom - b.top
+        assertTrue("빈 패널이 부모 높이만큼 늘어나면 안 된다 (실제=$h)", h < 400.dp)
     }
 }
