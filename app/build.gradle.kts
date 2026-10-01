@@ -13,8 +13,8 @@ android {
         applicationId = "com.kgcaudit.olocycle"
         minSdk = 24
         targetSdk = 35
-        versionCode = 40
-        versionName = "0.31.0"
+        versionCode = 41
+        versionName = "0.32.0"
     }
 
     buildTypes {
