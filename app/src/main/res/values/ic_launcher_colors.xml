@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- OLO 계열 공통 런처 바탕(왼쪽 위 → 오른쪽 아래) + 밝은 그레이 도형. eBook·Explorer와 한 식구. -->
-    <color name="launcher_background_light">#FFE07B55</color>
-    <color name="launcher_background_dark">#FFC5613F</color>
-    <color name="launcher_shape">#FFEEEDEB</color>
-</resources>
