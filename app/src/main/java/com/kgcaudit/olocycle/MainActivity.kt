@@ -78,6 +78,7 @@ import com.kgcaudit.olocycle.data.BackupCodec
 import com.kgcaudit.olocycle.data.Profile
 import com.kgcaudit.olocycle.data.ProfilePhotos
 import com.kgcaudit.olocycle.ui.OloIcons
+import com.kgcaudit.olocycle.ui.theme.OloButtonShape
 import com.kgcaudit.olocycle.ui.theme.OloColors
 import com.kgcaudit.olocycle.ui.theme.OloTheme
 import java.time.LocalDate
@@ -591,7 +592,7 @@ private fun AppLockGate(onUnlock: () -> Unit) {
         Spacer(Modifier.height(4.dp))
         Text("생체인증 또는 화면 잠금으로 확인하세요.", color = OloColors.Muted, fontSize = 13.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(20.dp))
-        Button(onClick = onUnlock, colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary), shape = RoundedCornerShape(22.dp)) {
+        Button(onClick = onUnlock, colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary), shape = OloButtonShape) {
             Icon(OloIcons.Lock, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("잠금 해제", fontWeight = FontWeight.Bold)
         }
     }
@@ -868,7 +869,7 @@ internal fun YearView(
             Text("${year}년", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = profileColor, modifier = Modifier.padding(horizontal = 6.dp))
             IconButton(onNextYear, Modifier.size(34.dp)) { Icon(Icons.Default.ChevronRight, "다음 해", tint = OloColors.Muted, modifier = Modifier.size(22.dp)) }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onToday, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+            TextButton(onClick = onToday, shape = OloButtonShape, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
                 Text("올해", color = OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.width(4.dp))
@@ -991,7 +992,7 @@ private fun MonthYearPickerDialog(
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-        TextButton(onClick = { onPick(thisMonth) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+        TextButton(onClick = { onPick(thisMonth) }, shape = OloButtonShape, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text("이번 달로", color = accent, fontWeight = FontWeight.Bold)
         }
     }
@@ -1026,7 +1027,7 @@ internal fun MonthHeader(
         }
         IconButton(onNext, Modifier.size(34.dp)) { Icon(Icons.Default.ChevronRight, "다음 달", tint = OloColors.Muted, modifier = Modifier.size(22.dp)) }
         Spacer(Modifier.weight(1f))
-        TextButton(onClick = onToday, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+        TextButton(onClick = onToday, shape = OloButtonShape, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
             Text("오늘", color = OloColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.width(4.dp))
@@ -1589,7 +1590,7 @@ private fun SettingsScreen(
                 onClick = { runImport(HomeViewModel.ImportMode.MERGE) },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary),
-                shape = RoundedCornerShape(12.dp),
+                shape = OloButtonShape,
             ) { Text("현재 데이터에 합치기", fontWeight = FontWeight.Bold) }
             Text("기존 데이터는 그대로 두고, 백업의 구성원·기록을 추가합니다(이름이 같은 구성원은 합치고, 같은 날짜 기록은 기존 유지).",
                 Modifier.padding(top = 6.dp, bottom = 14.dp), color = OloColors.Muted, fontSize = 11.5.sp, lineHeight = 16.sp)
@@ -1597,7 +1598,7 @@ private fun SettingsScreen(
                 onClick = { runImport(HomeViewModel.ImportMode.REPLACE) },
                 modifier = Modifier.fillMaxWidth(),
                 border = androidx.compose.foundation.BorderStroke(1.dp, OloColors.Period),
-                shape = RoundedCornerShape(12.dp),
+                shape = OloButtonShape,
             ) { Text("전부 대체 (덮어쓰기)", color = OloColors.Period, fontWeight = FontWeight.Bold) }
             Text("현재 이 기기의 모든 구성원·기록을 지우고 백업 내용으로 바꿉니다. 되돌릴 수 없습니다.",
                 Modifier.padding(top = 6.dp), color = OloColors.Muted, fontSize = 11.5.sp, lineHeight = 16.sp)
@@ -1740,10 +1741,10 @@ private fun OloDialog(
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     if (dismissLabel != null) {
-                        TextButton(onClick = onDismiss) { Text(dismissLabel, color = OloColors.Muted, fontWeight = FontWeight.SemiBold) }
+                        TextButton(onClick = onDismiss, shape = OloButtonShape) { Text(dismissLabel, color = OloColors.Muted, fontWeight = FontWeight.SemiBold) }
                         Spacer(Modifier.width(4.dp))
                     }
-                    TextButton(onClick = onConfirm) { Text(confirmLabel, color = accent, fontWeight = FontWeight.Bold) }
+                    TextButton(onClick = onConfirm, shape = OloButtonShape) { Text(confirmLabel, color = accent, fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -1826,12 +1827,12 @@ private fun ProfileEditorDialog(
                     Column {
                         TextButton(onClick = {
                             photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        }) { Text(if (photoPath == null) "사진 추가" else "사진 변경") }
+                        }, shape = OloButtonShape) { Text(if (photoPath == null) "사진 추가" else "사진 변경") }
                         if (photoPath != null) {
                             TextButton(onClick = {
                                 if (photoPath != original?.photoPath) ProfilePhotos.delete(photoPath) // 저장 전 새로 만든 파일이면 정리
                                 photoPath = null
-                            }) { Text("사진 제거", color = OloColors.Muted) }
+                            }, shape = OloButtonShape) { Text("사진 제거", color = OloColors.Muted) }
                         }
                     }
                 }
@@ -1856,12 +1857,12 @@ private fun ProfileEditorDialog(
                 if (onDelete != null) {
                     Spacer(Modifier.height(8.dp))
                     if (!confirmDelete) {
-                        TextButton(onClick = { confirmDelete = true }) { Text("이 구성원 삭제", color = OloColors.Period) }
+                        TextButton(onClick = { confirmDelete = true }, shape = OloButtonShape) { Text("이 구성원 삭제", color = OloColors.Period) }
                     } else {
                         Text("이 구성원의 모든 기록이 함께 삭제됩니다.", color = OloColors.Period, fontSize = 12.sp)
                         Row {
-                            TextButton(onClick = onDelete) { Text("삭제 확인", color = OloColors.Period) }
-                            TextButton(onClick = { confirmDelete = false }) { Text("취소") }
+                            TextButton(onClick = onDelete, shape = OloButtonShape) { Text("삭제 확인", color = OloColors.Period) }
+                            TextButton(onClick = { confirmDelete = false }, shape = OloButtonShape) { Text("취소") }
                         }
                     }
                 }
@@ -1993,6 +1994,7 @@ internal fun DayDetailPanel(
             Button(
                 onClick = { onSave(date, st.periodStart, st.flow, st.symptoms.toList(), st.mood, st.temperature.toDoubleOrNull(), st.memo) },
                 colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary),
+                shape = OloButtonShape,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
             ) { Text("저장", color = Color.White, fontWeight = FontWeight.Bold) }
         }
