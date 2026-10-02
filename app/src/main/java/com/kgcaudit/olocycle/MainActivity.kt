@@ -240,6 +240,16 @@ private fun App(vm: HomeViewModel = viewModel()) {
             onSelect = { tab = it },
             onFab = { recordDate = state.today },
             header = {
+                // 화면별 보조 맥락줄: 오늘=날짜·요일 / 달력=보이는 월 / 분석=프로필 리포트.
+                val tabSubtitle = when (tab) {
+                    Tab.HOME -> {
+                        val d = state.today
+                        val dow = listOf("월", "화", "수", "목", "금", "토", "일")[d.dayOfWeek.value - 1]
+                        "${d.monthValue}월 ${d.dayOfMonth}일 ${dow}요일"
+                    }
+                    Tab.CALENDAR -> "${visibleMonth.year}년 ${visibleMonth.monthValue}월"
+                    Tab.ANALYSIS -> state.selected?.name?.let { "$it · 주기 리포트" }
+                }
                 MemberSwitcher(
                     tabLabel = tab.label,
                     profiles = state.profiles,
@@ -248,6 +258,7 @@ private fun App(vm: HomeViewModel = viewModel()) {
                     onAdd = { showAdd = true },
                     onEditCurrent = { state.selected?.let { editProfile = it } },
                     onSettings = { showSettings = true },
+                    tabSubtitle = tabSubtitle,
                 )
             },
         ) { contentModifier ->
@@ -311,17 +322,23 @@ private fun App(vm: HomeViewModel = viewModel()) {
 internal fun MemberSwitcher(
     tabLabel: String, profiles: List<Profile>, selectedId: Long?,
     onSelect: (Long) -> Unit, onAdd: () -> Unit, onEditCurrent: () -> Unit, onSettings: () -> Unit,
+    tabSubtitle: String? = null,
 ) {
     Column(Modifier.fillMaxWidth().background(OloColors.Surface).statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(16.dp, 8.dp, 4.dp, 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 화면명이 페이지 주 타이틀. 워드마크(OLO Cycle 글자)는 뺐고, 순환 고리만 브랜드 흔적으로 남긴다.
-            OloRingMark(size = 20.dp, color = OloColors.Primary)
-            Spacer(Modifier.width(9.dp))
-            // 화면명은 보통 굵기로 — 강한 인상 대신 순한 뉘앙스.
-            Text(tabLabel, color = OloColors.Ink, fontWeight = FontWeight.Normal, fontSize = 22.sp, lineHeight = 24.sp, maxLines = 1)
+            // 화면명이 페이지 주 타이틀. 워드마크(OLO Cycle 글자)는 뺐고, 여성 기호 ♀ 만 브랜드 흔적으로 남긴다.
+            OloRingMark(size = 22.dp, color = OloColors.Primary)
+            Spacer(Modifier.width(10.dp))
+            // 화면명 + 그 아래 보조 맥락줄(오늘=날짜·요일 / 달력=해당 월 / 분석=프로필·리포트).
+            Column {
+                Text(tabLabel, color = OloColors.Ink, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 20.sp, maxLines = 1)
+                if (tabSubtitle != null) {
+                    Text(tabSubtitle, color = OloColors.Muted, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 1)
+                }
+            }
             Spacer(Modifier.width(10.dp))
             Row(
                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -362,33 +379,25 @@ internal fun MemberSwitcher(
     }
 }
 
-/** 앱 상징 마크 — 붓으로 그린 엔소(열린 원) + 오른쪽 위 물방울. 런처 아이콘 모티프와 호응(클레이 단색). */
+/** 앱 상징 마크 — 여성 기호 ♀(위 원 + 아래 세로획 + 가로 십자획). 클레이 단색, 작은 크기에서도 또렷하도록 굵은 획. */
 @Composable
 private fun OloRingMark(size: Dp, color: Color) {
     Canvas(Modifier.size(size)) {
-        val sw = this.size.minDimension * 0.17f
-        val r = (this.size.minDimension - sw) / 2f
-        val c = center
-        // 엔소: 트임을 오른쪽 위에 두어 물방울 자리를 비운다(런처 마크와 같은 방향).
-        drawArc(color, -20f, 300f, false,
-            topLeft = Offset(c.x - r, c.y - r), size = Size(r * 2, r * 2),
-            style = Stroke(sw, cap = StrokeCap.Round))
-        // 물방울: 불룩한 머리(원) + 링 쪽으로 향한 뾰족한 꼬리(삼각형).
-        val a = Math.toRadians(-47.0)
-        val bulbR = sw * 0.95f
-        val bulb = Offset(c.x + (r * 0.5f) * kotlin.math.cos(a).toFloat(), c.y + (r * 0.5f) * kotlin.math.sin(a).toFloat())
-        val tail = Offset(c.x + (r * 1.02f) * kotlin.math.cos(a).toFloat(), c.y + (r * 1.02f) * kotlin.math.sin(a).toFloat())
-        drawCircle(color, radius = bulbR, center = bulb)
-        val dx = tail.x - bulb.x; val dy = tail.y - bulb.y
-        val len = kotlin.math.hypot(dx, dy)
-        val nx = -dy / len; val ny = dx / len
-        val drop = androidx.compose.ui.graphics.Path().apply {
-            moveTo(bulb.x + nx * bulbR, bulb.y + ny * bulbR)
-            lineTo(tail.x, tail.y)
-            lineTo(bulb.x - nx * bulbR, bulb.y - ny * bulbR)
-            close()
-        }
-        drawPath(drop, color)
+        val s = this.size.minDimension
+        val r = s * 0.265f               // 원(머리) 반지름
+        val sw = s * 0.125f              // 획 두께(또렷)
+        val stem = r * 1.02f             // 원 아래 세로획 길이
+        val crossHalf = r * 0.56f        // 가로 십자획 반폭
+        val cx = s * 0.5f
+        // 글리프 전체(2R + stem)를 세로 가운데 맞춤.
+        val top = (s - (2f * r + stem)) / 2f
+        val ringCy = top + r
+        val stemTop = ringCy + r
+        val stemBottom = stemTop + stem
+        val crossY = stemTop + stem * 0.52f
+        drawCircle(color, radius = r, center = Offset(cx, ringCy), style = Stroke(sw))
+        drawLine(color, Offset(cx, stemTop), Offset(cx, stemBottom), strokeWidth = sw, cap = StrokeCap.Round)
+        drawLine(color, Offset(cx - crossHalf, crossY), Offset(cx + crossHalf, crossY), strokeWidth = sw, cap = StrokeCap.Round)
     }
 }
 
@@ -1224,8 +1233,7 @@ internal fun LegendItem(label: String, fill: Color, dashBorder: Color? = null, r
 @Composable
 private fun AnalysisTab(state: HomeState, profileColor: Color, expanded: Boolean, onOpenDay: (LocalDate) -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        // 화면명 "분석"은 상단 헤더가 주 타이틀로 보여 주므로 본문 제목은 빼고, 어떤 프로필의 리포트인지 부제만 남긴다.
-        state.selected?.name?.let { AnalysisSubtitle("$it · 주기·증상 리포트") }
+        // 화면명·프로필 리포트 부제는 상단 헤더(화면명 + 보조 맥락줄)가 보여 주므로 본문 중복은 뺀다.
 
         // 요약 KPI(전폭) + 안내
         AnalysisKpiRow(state, profileColor)

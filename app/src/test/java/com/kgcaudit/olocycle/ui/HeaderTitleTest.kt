@@ -28,12 +28,13 @@ class HeaderTitleTest {
 
     private val profiles = listOf(Profile(id = 1, name = "현정", color = 0xFFB95B3B.toInt()))
 
-    private fun setHeader(tabLabel: String) {
+    private fun setHeader(tabLabel: String, tabSubtitle: String? = null) {
         rule.setContent {
             OloTheme {
                 MemberSwitcher(
                     tabLabel = tabLabel, profiles = profiles, selectedId = 1,
                     onSelect = {}, onAdd = {}, onEditCurrent = {}, onSettings = {},
+                    tabSubtitle = tabSubtitle,
                 )
             }
         }
@@ -50,5 +51,12 @@ class HeaderTitleTest {
         setHeader("오늘")
         rule.onNodeWithText("OLO", substring = true).assertDoesNotExist()
         rule.onNodeWithText("Cycle", substring = true).assertDoesNotExist()
+    }
+
+    /** 안 A: 화면명 아래 보조 맥락줄이 함께 보여야 한다. 맥락줄을 빼면 이 테스트가 잡는다(돌연변이 확인 대상). */
+    @Test
+    fun shows_context_subtitle() {
+        setHeader("오늘", tabSubtitle = "9월 30일 화요일")
+        rule.onNodeWithText("9월 30일 화요일").assertIsDisplayed()
     }
 }
