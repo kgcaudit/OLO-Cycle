@@ -38,7 +38,10 @@ Robolectric NATIVE 로 실제 Compose 를 PNG 로 저장한다. 이 환경에서
 
 ## 빌드·배포 관습
 
-- 릴리스 절차: 구현 → `./gradlew --no-daemon -q testDebugUnitTest lintDebug assembleDebug`(lint 오류 0) →
+- 릴리스 절차: 구현 → `./gradlew --no-daemon -q testDebugUnitTest lintRelease assembleRelease`(lint 오류 0) →
   버전 올림(`app/build.gradle.kts`) → 커밋 → `main` 푸시 → APK 를 사용자에게 전달.
-- APK 사본은 `olo-cycle-<버전>-debug.apk` 로 저장소 루트에 둔다(디버그 확인용).
+- 배포 APK 는 **최적화 빌드(release)** 를 쓴다 — R8 코드 축소 + 리소스 축소로 안 쓰는 라이브러리·아이콘을
+  제거(약 17MB → 2MB). 설치 편의를 위해 디버그 키로 서명한다(`signingConfig = debug`).
+- APK 사본은 `olo-cycle-<버전>-release.apk` 로 저장소 루트에 둔다. (빠른 내부 디버깅이 필요하면
+  `assembleDebug` 로 비최적화 APK 를 따로 뽑되, 사용자 전달본은 release 를 기본으로 한다.)
 - 커밋 메시지·PR·코드 어디에도 모델 식별자를 넣지 않는다.

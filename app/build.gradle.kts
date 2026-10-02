@@ -13,14 +13,18 @@ android {
         applicationId = "com.kgcaudit.olocycle"
         minSdk = 24
         targetSdk = 35
-        versionCode = 46
-        versionName = "0.37.0"
+        versionCode = 47
+        versionName = "0.38.0"
     }
 
     buildTypes {
         release {
+            // 코드 최적화: R8 코드 축소 + 리소스 축소(안 쓰는 아이콘·라이브러리 제거 → APK 대폭 축소).
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // 로컬 확인/배포 편의: 디버그 키로 서명해 최적화 APK를 그대로 설치할 수 있게 한다.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
