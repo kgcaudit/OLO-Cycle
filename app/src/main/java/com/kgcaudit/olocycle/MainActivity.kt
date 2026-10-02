@@ -320,7 +320,8 @@ internal fun MemberSwitcher(
             // 화면명이 페이지 주 타이틀. 워드마크(OLO Cycle 글자)는 뺐고, 순환 고리만 브랜드 흔적으로 남긴다.
             OloRingMark(size = 20.dp, color = OloColors.Primary)
             Spacer(Modifier.width(9.dp))
-            Text(tabLabel, color = OloColors.Ink, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, lineHeight = 24.sp, maxLines = 1)
+            // 화면명은 보통 굵기로 — 강한 인상 대신 순한 뉘앙스.
+            Text(tabLabel, color = OloColors.Ink, fontWeight = FontWeight.Normal, fontSize = 22.sp, lineHeight = 24.sp, maxLines = 1)
             Spacer(Modifier.width(10.dp))
             Row(
                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -361,14 +362,33 @@ internal fun MemberSwitcher(
     }
 }
 
-/** 앱 상징 '순환 고리' 마크 — 살짝 트인 원. 브랜드색(클레이)으로 헤더 워드마크 앞에 둔다. */
+/** 앱 상징 마크 — 붓으로 그린 엔소(열린 원) + 오른쪽 위 물방울. 런처 아이콘 모티프와 호응(클레이 단색). */
 @Composable
 private fun OloRingMark(size: Dp, color: Color) {
     Canvas(Modifier.size(size)) {
-        val sw = size.toPx() * 0.18f
+        val sw = this.size.minDimension * 0.17f
         val r = (this.size.minDimension - sw) / 2f
-        val tl = Offset(center.x - r, center.y - r); val sz = Size(r * 2, r * 2)
-        drawArc(color, -48f, 300f, false, tl, sz, style = Stroke(sw, cap = StrokeCap.Round))
+        val c = center
+        // 엔소: 트임을 오른쪽 위에 두어 물방울 자리를 비운다(런처 마크와 같은 방향).
+        drawArc(color, -20f, 300f, false,
+            topLeft = Offset(c.x - r, c.y - r), size = Size(r * 2, r * 2),
+            style = Stroke(sw, cap = StrokeCap.Round))
+        // 물방울: 불룩한 머리(원) + 링 쪽으로 향한 뾰족한 꼬리(삼각형).
+        val a = Math.toRadians(-47.0)
+        val bulbR = sw * 0.95f
+        val bulb = Offset(c.x + (r * 0.5f) * kotlin.math.cos(a).toFloat(), c.y + (r * 0.5f) * kotlin.math.sin(a).toFloat())
+        val tail = Offset(c.x + (r * 1.02f) * kotlin.math.cos(a).toFloat(), c.y + (r * 1.02f) * kotlin.math.sin(a).toFloat())
+        drawCircle(color, radius = bulbR, center = bulb)
+        val dx = tail.x - bulb.x; val dy = tail.y - bulb.y
+        val len = kotlin.math.hypot(dx, dy)
+        val nx = -dy / len; val ny = dx / len
+        val drop = androidx.compose.ui.graphics.Path().apply {
+            moveTo(bulb.x + nx * bulbR, bulb.y + ny * bulbR)
+            lineTo(tail.x, tail.y)
+            lineTo(bulb.x - nx * bulbR, bulb.y - ny * bulbR)
+            close()
+        }
+        drawPath(drop, color)
     }
 }
 
