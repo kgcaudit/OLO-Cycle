@@ -1234,6 +1234,8 @@ internal fun LegendItem(label: String, fill: Color, dashBorder: Color? = null, r
 private fun AnalysisTab(state: HomeState, profileColor: Color, expanded: Boolean, onOpenDay: (LocalDate) -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         // 화면명·프로필 리포트 부제는 상단 헤더(화면명 + 보조 맥락줄)가 보여 주므로 본문 중복은 뺀다.
+        // 헤더와 첫 박스 사이 여백은 '오늘' 화면(HomeDashboard)과 동일하게 맞춘다.
+        Spacer(Modifier.height(14.dp))
 
         // 요약 KPI(전폭) + 안내
         AnalysisKpiRow(state, profileColor)
