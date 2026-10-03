@@ -2,6 +2,8 @@ package com.kgcaudit.olocycle.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathNode
 import androidx.compose.ui.graphics.vector.PathParser
@@ -27,27 +29,35 @@ object OloIcons {
     // 단색 채움 — tint 로 덮이므로 검정으로 담는다.
     private val fill = SolidColor(Color.Black)
 
+    /** 하단 내비 3종(집·달력·분석)은 OLO 톤(가는 선·둥근 끝/모서리)의 라인 글리프로 그린다 — ♀ 마크와 같은 결. */
+    private fun ImageVector.Builder.stroke(
+        d: String, width: Float = 2f, cap: StrokeCap = StrokeCap.Round, join: StrokeJoin = StrokeJoin.Round,
+    ) = addPath(parse(d), stroke = fill, strokeLineWidth = width, strokeLineCap = cap, strokeLineJoin = join)
+
     val Calendar: ImageVector by lazy { icon {
-        addPath(parse("M9 9H7V11H9V9Z"), fill = fill)
-        addPath(parse("M17 9H15V11H17V9Z"), fill = fill)
-        addPath(parse("M7 13H9V15H7V13Z"), fill = fill)
-        addPath(parse("M13 9H11V11H13V9Z"), fill = fill)
-        addPath(parse("M11 13H13V15H11V13Z"), fill = fill)
-        addPath(parse("M17 13H15V15H17V13Z"), fill = fill)
-        addPath(parse("M15 2H17V4H20C21.1 4 22 4.9 22 6V18C22 19.1 21.1 20 20 20H4C2.9 20 2 19.1 2 18V6C2 4.9 2.9 4 4 4H7V2H9V4H15V2ZM4 18V6H20V18H4Z"), fill = fill)
+        // 본체 둥근 사각틀
+        stroke("M6 5.8H18A2.2 2.2 0 0 1 20.2 8V18A2.2 2.2 0 0 1 18 20.2H6A2.2 2.2 0 0 1 3.8 18V8A2.2 2.2 0 0 1 6 5.8Z")
+        // 상단 제본 고리 2개
+        stroke("M8.2 3.6V7.2")
+        stroke("M15.8 3.6V7.2")
+        // 헤더 구분선
+        stroke("M3.8 9.6H20.2", width = 1.7f)
+        // 오늘 점(채움)
+        addPath(parse("M13.26 14.76A1.5 1.5 0 1 1 16.26 14.76A1.5 1.5 0 1 1 13.26 14.76Z"), fill = fill)
     } }
 
     val Chart: ImageVector by lazy { icon {
-        addPath(parse("M6 16V19H4V16H6ZM7 14H3C2.45 14 2 14.45 2 15V21H8V15C8 14.45 7.55 14 7 14Z"), fill = fill)
-        addPath(parse("M13 11V19H11V11H13ZM14 9H10C9.45 9 9 9.45 9 10V21H15V10C15 9.45 14.55 9 14 9Z"), fill = fill)
-        addPath(parse("M20 5V19H18V5H20ZM21 3H17C16.45 3 16 3.45 16 4V21H22V4C22 3.45 21.55 3 21 3Z"), fill = fill)
+        // 둥근 끝 막대 3개(낮음·높음·중간)
+        stroke("M6.72 14.4V19.2", width = 3f)
+        stroke("M12 9.12V19.2", width = 3f)
+        stroke("M17.28 12V19.2", width = 3f)
     } }
 
     val Home: ImageVector by lazy { icon {
-        addPath(parse("M5 20V9H3V22H21V9H19V20H5Z"), fill = fill)
-        addPath(parse("M22.0001 12.0002C21.7801 12.0002 21.5601 11.9302 21.3801 11.7802L12.6201 4.82016C12.2501 4.53016 11.7401 4.53016 11.3801 4.82016L2.63005 11.7802C2.20005 12.1202 1.57005 12.0502 1.22005 11.6202C0.880053 11.1902 0.950053 10.5602 1.38005 10.2102L10.1301 3.25016C11.2301 2.38016 12.7701 2.38016 13.8601 3.25016L22.6201 10.2102C23.0501 10.5502 23.1201 11.1802 22.7801 11.6202C22.5801 11.8702 22.2901 12.0002 22.0001 12.0002Z"), fill = fill)
-        addPath(parse("M11 14V20H9V14H11ZM13 12H7V22H13V12Z"), fill = fill)
-        addPath(parse("M17 12H14V15H17V12Z"), fill = fill)
+        // 지붕(처마→꼭대기→처마) + 몸체(벽·바닥) + 문
+        stroke("M3.6 11.3L12 3.8L20.4 11.3")
+        stroke("M5.5 10.3V20.4H18.5V10.3")
+        stroke("M10.1 20.4V15.1H13.9V20.4")
     } }
 
     val Settings: ImageVector by lazy { icon {
