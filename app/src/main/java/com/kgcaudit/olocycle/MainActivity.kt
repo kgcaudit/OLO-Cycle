@@ -217,7 +217,7 @@ private fun App(vm: HomeViewModel = viewModel()) {
     val selId = state.selected?.id
     val contentOffset = remember { Animatable(0f) }
     val contentAlpha = remember { Animatable(1f) }
-    var lastIndex by remember { mutableStateOf(-1) }
+    var lastIndex by remember { mutableIntStateOf(-1) }
     LaunchedEffect(selId) {
         val curIndex = state.profiles.indexOfFirst { it.id == selId }
         if (lastIndex >= 0 && curIndex >= 0 && curIndex != lastIndex) {
@@ -244,7 +244,7 @@ private fun App(vm: HomeViewModel = viewModel()) {
                 val tabSubtitle = when (tab) {
                     Tab.HOME -> {
                         val d = state.today
-                        val dow = listOf("월", "화", "수", "목", "금", "토", "일")[d.dayOfWeek.value - 1]
+                        val dow = KO_DOW[d.dayOfWeek.value % 7]
                         "${d.monthValue}월 ${d.dayOfMonth}일 ${dow}요일"
                     }
                     Tab.CALENDAR -> "${visibleMonth.year}년 ${visibleMonth.monthValue}월"
@@ -747,7 +747,7 @@ internal fun WeekStrip(state: HomeState, profileColor: Color, onOpenCalendar: ()
         }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            val labels = listOf("일", "월", "화", "수", "목", "금", "토")
+            val labels = KO_DOW
             (0..6).forEach { i ->
                 val day = sunday.plusDays(i.toLong())
                 val (bg, fg) = phaseColors(state.phaseOf(day))
@@ -983,7 +983,7 @@ private fun MonthYearPickerDialog(
     month: YearMonth, accent: Color, today: LocalDate,
     onPick: (YearMonth) -> Unit, onDismiss: () -> Unit,
 ) {
-    var year by remember { mutableStateOf(month.year) }
+    var year by remember { mutableIntStateOf(month.year) }
     val thisMonth = YearMonth.from(today)
     OloDialog(
         title = "연·월 선택",
@@ -1085,7 +1085,7 @@ internal fun MonthCalendar(
             .padding(8.dp),
     ) {
         Row(Modifier.fillMaxWidth()) {
-            listOf("일", "월", "화", "수", "목", "금", "토").forEachIndexed { i, w ->
+            KO_DOW.forEachIndexed { i, w ->
                 Text(w, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 12.sp,
                     color = if (i == 0) OloColors.Period else OloColors.Muted)
             }
@@ -1561,8 +1561,7 @@ private fun SettingsScreen(
                 SettingsIconRow(Icons.Default.Info, "앱 정보 · 오픈소스 고지", "버전 ${BuildConfig.VERSION_NAME} · 오픈소스 라이선스",
                     onClick = onAbout) { Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted) }
             }
-            Spacer(Modifier.height(4.dp))
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
           }
         }
     }
@@ -1715,15 +1714,6 @@ internal fun SettingsIconRow(
     }
 }
 
-@Composable
-private fun SettingRow(title: String, onClick: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-        .padding(20.dp, 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, Modifier.weight(1f), color = OloColors.Ink, fontWeight = FontWeight.SemiBold)
-        if (onClick != null) Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted)
-    }
-}
-
 // ---------------------------------------------------------------------------- shared bits
 
 @Composable
@@ -1821,10 +1811,10 @@ private fun ProfileEditorDialog(
 ) {
     var name by remember { mutableStateOf(original?.name ?: "") }
     var colorIndex by remember {
-        mutableStateOf(original?.let { p -> OloColors.ProfilePalette.indexOfFirst { it.toArgb() == p.color }.coerceAtLeast(0) } ?: 0)
+        mutableIntStateOf(original?.let { p -> OloColors.ProfilePalette.indexOfFirst { it.toArgb() == p.color }.coerceAtLeast(0) } ?: 0)
     }
-    var cycle by remember { mutableStateOf(original?.defaultCycleLength ?: 28) }
-    var period by remember { mutableStateOf(original?.defaultPeriodLength ?: 5) }
+    var cycle by remember { mutableIntStateOf(original?.defaultCycleLength ?: 28) }
+    var period by remember { mutableIntStateOf(original?.defaultPeriodLength ?: 5) }
     var birthControl by remember { mutableStateOf(original?.onBirthControl ?: false) }
     var photoPath by remember { mutableStateOf(original?.photoPath) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -1928,6 +1918,8 @@ internal fun Stepper(modifier: Modifier, label: String, value: Int, min: Int, ma
     }
 }
 
+/** 한글 요일(일~토). dayOfWeek.value(월=1..일=7) 는 `% 7` 로 이 리스트에 바로 매핑된다. */
+internal val KO_DOW = listOf("일", "월", "화", "수", "목", "금", "토")
 private val FLOW_LABELS = listOf("없음", "적음", "보통", "많음")
 private val SYMPTOM_OPTIONS = listOf("복통", "두통", "허리통증", "부종", "여드름", "피로", "메스꺼움", "유방통")
 private val MOOD_OPTIONS = listOf("좋음", "평온", "예민", "우울", "불안")
