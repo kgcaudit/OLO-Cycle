@@ -1513,11 +1513,16 @@ private fun SettingsScreen(
             Text("설정", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = OloColors.Ink)
         }
         HorizontalDivider(color = OloColors.Line)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+        // 큰 화면(태블릿 ≥600dp)에서 설정 행이 지나치게 길어지지 않게 본문 폭을 제한하고 가운데 정렬한다.
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+          Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().padding(horizontal = 16.dp)) {
             // 보안
             SettingsGroup("보안")
             SettingsGroupCard {
-                SettingsIconRow(OloIcons.Lock, "앱 잠금", "열 때·다른 앱에서 돌아올 때 생체인증/PIN 요구") {
+                SettingsIconRow(OloIcons.Lock, "앱 잠금", "열 때 생체인증·PIN") {
                     Switch(appLockEnabled, onToggleAppLock)
                 }
             }
@@ -1541,13 +1546,13 @@ private fun SettingsScreen(
             // 백업 — 암호화 파일로 내보내고, 그 파일에서 복원. 인터넷 없이 기기 파일로만.
             SettingsGroup("백업")
             SettingsGroupCard {
-                SettingsIconRow(OloIcons.Export, "암호화 백업 내보내기", "전체 데이터를 암호로 잠근 파일로 저장",
+                SettingsIconRow(OloIcons.Export, "암호화 백업 내보내기", "암호로 잠근 파일로 저장",
                     onClick = if (!busy) ({ passExport = true }) else null) { Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted) }
                 HorizontalDivider(color = OloColors.Line, modifier = Modifier.padding(start = 58.dp))
-                SettingsIconRow(OloIcons.Import, "백업에서 복원", "현재 데이터를 백업 내용으로 대체",
+                SettingsIconRow(OloIcons.Import, "백업에서 복원", "백업 내용으로 되돌리기",
                     onClick = if (!busy) ({ onExternalPick(); importLauncher.launch(arrayOf("*/*")) }) else null) { Icon(Icons.Default.ChevronRight, null, tint = OloColors.Muted) }
             }
-            Text("비밀번호는 복원할 때 반드시 필요합니다. 잊으면 백업을 열 수 없습니다(기기에만 저장, 복구 불가).",
+            Text("비밀번호를 잊으면 백업을 열 수 없습니다(복구 불가).",
                 Modifier.padding(4.dp, 8.dp), color = OloColors.Muted, fontSize = 11.5.sp, lineHeight = 16.sp)
 
             // 앱
@@ -1558,6 +1563,7 @@ private fun SettingsScreen(
             }
             Spacer(Modifier.height(4.dp))
             Spacer(Modifier.height(20.dp))
+          }
         }
     }
 
@@ -1695,7 +1701,7 @@ internal fun SettingsIconRow(
 ) {
     val base = Modifier.fillMaxWidth()
         .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-        .padding(14.dp, 12.dp)
+        .padding(14.dp, 9.dp)
     Row(base, verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(32.dp).clip(CircleShape).background(OloColors.Primary.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
             Icon(icon, null, tint = OloColors.Primary, modifier = Modifier.size(18.dp))
@@ -1758,7 +1764,8 @@ private fun OloDialog(
             color = OloColors.Surface,
             tonalElevation = 0.dp,
             shadowElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth(0.92f).heightIn(max = maxHeight),
+            // 큰 화면(태블릿·가로)에서 다이얼로그가 과도하게 넓어지지 않게 최대폭을 제한한다(폰은 0.92f 그대로).
+            modifier = Modifier.fillMaxWidth(0.92f).widthIn(max = 420.dp).heightIn(max = maxHeight),
         ) {
             Column(Modifier.padding(top = 22.dp, bottom = 10.dp)) {
                 Text(title, Modifier.padding(horizontal = 24.dp), color = OloColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
@@ -1879,8 +1886,10 @@ private fun ProfileEditorDialog(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                Stepper("평균 주기(일)", cycle, 15, 60) { cycle = it }
-                Stepper("평균 생리 기간(일)", period, 1, 10) { period = it }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Stepper(Modifier.weight(1f), "평균 주기", cycle, 15, 60, "일") { cycle = it }
+                    Stepper(Modifier.weight(1f), "생리 기간", period, 1, 10, "일") { period = it }
+                }
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("피임약 복용", Modifier.weight(1f), fontSize = 13.sp); Switch(birthControl, { birthControl = it })
                 }
@@ -1899,13 +1908,23 @@ private fun ProfileEditorDialog(
     }
 }
 
+/** 컴팩트 조절바: 라벨(위) + [− 값단위 +] pill. 한 줄에 둘을 나란히 둘 수 있어 세로 공간을 아낀다. */
 @Composable
-private fun Stepper(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), fontSize = 13.sp)
-        IconButton({ if (value > min) onChange(value - 1) }) { Text("−", fontSize = 18.sp) }
-        Text("$value", fontWeight = FontWeight.Bold)
-        IconButton({ if (value < max) onChange(value + 1) }) { Text("+", fontSize = 18.sp) }
+internal fun Stepper(modifier: Modifier, label: String, value: Int, min: Int, max: Int, unit: String, onChange: (Int) -> Unit) {
+    Column(modifier) {
+        Text(label, fontSize = 12.sp, color = OloColors.Muted, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(OloColors.SurfaceSoft)
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).clickable { if (value > min) onChange(value - 1) },
+                contentAlignment = Alignment.Center) { Text("−", fontSize = 18.sp, color = OloColors.Primary) }
+            Text("$value$unit", Modifier.weight(1f), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, color = OloColors.Ink, fontSize = 15.sp)
+            Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).clickable { if (value < max) onChange(value + 1) },
+                contentAlignment = Alignment.Center) { Text("+", fontSize = 18.sp, color = OloColors.Primary) }
+        }
     }
 }
 
