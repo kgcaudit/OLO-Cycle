@@ -35,6 +35,9 @@ Robolectric NATIVE 로 실제 Compose 를 PNG 로 저장한다. 이 환경에서
 - 디자인: OLO 디자인 시스템(클레이 #B95B3B + 아이보리 웜톤). 색 토큰은 `ui/theme/Color.kt`(`OloColors`).
   색의 축은 2개 — **활성 구성원색 = 화면 강조**(히어로·탭·FAB·오늘 등), **주기 의미색**(생리 로즈 / 가임·배란 세이지 틸).
 - 예측은 참고용 추정치(비의료). 예측 로직 `cycle/CyclePredictor.kt`(단위 테스트 `app/src/test/.../cycle/`).
+- UI 코드는 기능별 파일로 나뉜다(같은 `com.kgcaudit.olocycle` 패키지): `MainActivity.kt`(Activity·App·Tab),
+  `Navigation.kt`(헤더·탭바·레일), `HomeScreen.kt`·`CalendarScreen.kt`·`AnalysisScreen.kt`,
+  `SettingsScreen.kt`, `Dialogs.kt`(공용 다이얼로그·기록 입력·조절바). 파일 간 공유 부품은 `internal`.
 
 ## 빌드·배포 관습
 
