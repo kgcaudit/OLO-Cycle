@@ -98,7 +98,8 @@ internal enum class CalMode { MONTH, YEAR }
 internal fun CalendarTab(
     state: HomeState, profileColor: Color, visibleMonth: YearMonth, expanded: Boolean,
     onSetMonth: (YearMonth) -> Unit, onDayClick: (LocalDate) -> Unit,
-    onSetPeriodStart: (LocalDate, Boolean) -> Unit, onSaveRecord: (LocalDate, Int?, List<String>, String?, Double?, String?) -> Unit,
+    onSetPeriodStart: (LocalDate, Boolean) -> Unit, onSetPeriodEnd: (LocalDate, Boolean) -> Unit,
+    onSaveRecord: (LocalDate, Int?, List<String>, String?, Double?, Double?, String?) -> Unit,
 ) {
     var mode by remember { mutableStateOf(CalMode.MONTH) }
     var showPicker by remember { mutableStateOf(false) }
@@ -173,8 +174,11 @@ internal fun CalendarTab(
                 modifier = Modifier.weight(1f).padding(12.dp),
                 date = selectedDay,
                 isPeriodStart = selectedDay?.let { state.isPeriodStart(it) } ?: false,
+                isPeriodEnd = selectedDay?.let { state.isRecordedPeriodEnd(it) } ?: false,
                 existing = selectedDay?.let { state.recordOf(it) },
-                onSave = { d, ps, flow, sym, mood, temp, memo -> onSetPeriodStart(d, ps); onSaveRecord(d, flow, sym, mood, temp, memo) },
+                onSave = { d, ps, pe, flow, sym, mood, temp, weight, memo ->
+                    onSetPeriodStart(d, ps); onSetPeriodEnd(d, pe); onSaveRecord(d, flow, sym, mood, temp, weight, memo)
+                },
             )
         }
     } else {

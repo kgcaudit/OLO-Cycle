@@ -43,7 +43,7 @@ class DayDetailPanelTest {
     fun shows_inline_editor_for_a_date() {
         rule.setContent {
             OloTheme {
-                DayDetailPanel(Modifier.fillMaxSize(), LocalDate.of(2026, 9, 30), false, null) { _, _, _, _, _, _, _ -> }
+                DayDetailPanel(Modifier.fillMaxSize(), LocalDate.of(2026, 9, 30), false, false, null) { _, _, _, _, _, _, _, _, _ -> }
             }
         }
         rule.onNodeWithText("9월 30일 기록").assertExists()
@@ -55,7 +55,7 @@ class DayDetailPanelTest {
     fun shows_prompt_when_no_date() {
         rule.setContent {
             OloTheme {
-                DayDetailPanel(Modifier.fillMaxSize(), null, false, null) { _, _, _, _, _, _, _ -> }
+                DayDetailPanel(Modifier.fillMaxSize(), null, false, false, null) { _, _, _, _, _, _, _, _, _ -> }
             }
         }
         rule.onNodeWithText("날짜를 선택하면", substring = true).assertExists()
@@ -68,7 +68,7 @@ class DayDetailPanelTest {
         val target = LocalDate.of(2026, 9, 15)
         rule.setContent {
             OloTheme {
-                DayDetailPanel(Modifier.fillMaxSize(), target, false, null) { d, _, _, _, _, _, _ -> savedDate = d }
+                DayDetailPanel(Modifier.fillMaxSize(), target, false, false, null) { d, _, _, _, _, _, _, _, _ -> savedDate = d }
             }
         }
         rule.onNodeWithText("저장").performClick()
@@ -82,7 +82,7 @@ class DayDetailPanelTest {
         rule.setContent {
             OloTheme {
                 Box(Modifier.height(800.dp)) {
-                    DayDetailPanel(Modifier.testTag("panel"), null, false, null) { _, _, _, _, _, _, _ -> }
+                    DayDetailPanel(Modifier.testTag("panel"), null, false, false, null) { _, _, _, _, _, _, _, _, _ -> }
                 }
             }
         }

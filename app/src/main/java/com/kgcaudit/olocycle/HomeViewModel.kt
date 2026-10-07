@@ -34,6 +34,8 @@ data class HomeState(
     val profiles: List<Profile> = emptyList(),
     val selected: Profile? = null,
     val periodStarts: List<LocalDate> = emptyList(),
+    /** 기록된 생리 종료일: 시작일 → 종료일. (사용자가 실제 종료일을 찍은 주기만 들어 있다) */
+    val periodEndByStart: Map<LocalDate, LocalDate> = emptyMap(),
     val dayRecords: Map<LocalDate, DayRecord> = emptyMap(),
     val prediction: CyclePrediction? = null,
     val daysUntilNextPeriod: Int? = null,
@@ -54,6 +56,9 @@ data class HomeState(
     fun currentPhase(): Phase = phaseOf(today)
 
     fun isPeriodStart(day: LocalDate): Boolean = day in periodStarts
+
+    /** [day] 가 어떤 주기의 기록된 생리 종료일인가. */
+    fun isRecordedPeriodEnd(day: LocalDate): Boolean = periodEndByStart.containsValue(day)
 
     /** 1-based day within its recorded period (생리 며칠째), or null when [day] is not a recorded period day. */
     fun periodDayNumber(day: LocalDate): Int? {
@@ -82,8 +87,9 @@ data class HomeState(
         return sorted.mapIndexed { i, start ->
             val next = sorted.getOrNull(i + 1)
             CycleHistoryItem(
+                // 실제 종료일을 기록했으면 그 값을, 아니면 평균 생리기간 추정치를 쓴다.
                 start = start,
-                end = start.plusDays((len - 1).toLong()),
+                end = periodEndByStart[start] ?: start.plusDays((len - 1).toLong()),
                 cycleLength = next?.let { (it.toEpochDay() - start.toEpochDay()).toInt() },
             )
         }.reversed()
@@ -185,6 +191,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     ): HomeState {
         val today = LocalDate.now()
         val startDates = starts.map { it.startDate }
+        val periodEndByStart = starts.mapNotNull { s -> s.endDate?.let { s.startDate to it } }.toMap()
         val params = CyclePredictor.deriveParams(
             startDates,
             defaults = CycleParams(
@@ -200,6 +207,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             profiles = list,
             selected = selected,
             periodStarts = startDates,
+            periodEndByStart = periodEndByStart,
             dayRecords = records.associateBy { it.date },
             prediction = prediction,
             daysUntilNextPeriod = prediction?.let { CyclePredictor.daysUntilNextPeriod(it, today) },
@@ -224,6 +232,21 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * [date] 를 생리 종료일로 설정/해제한다. 종료일은 그 날짜 이전(포함)의 가장 가까운 기록 시작일에 귀속된다.
+     * 시작일보다 앞선 날짜이거나 귀속할 시작이 없으면 무시한다.
+     */
+    fun setPeriodEnd(date: LocalDate, on: Boolean) {
+        val profile = state.value.selected ?: return
+        viewModelScope.launch {
+            val rows = db.periodStartDao().listForProfile(profile.id)
+            val target = rows.filter { !it.startDate.isAfter(date) }.maxByOrNull { it.startDate } ?: return@launch
+            val newEnd = if (on) date else null
+            if (target.endDate == newEnd) return@launch
+            db.periodStartDao().insertKeepingId(target.copy(endDate = newEnd))
+        }
+    }
+
     /** Upserts the day log for [date] (preserving the existing row id if any). */
     fun saveDayRecord(
         date: LocalDate,
@@ -231,6 +254,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         symptoms: List<String>,
         mood: String?,
         temperature: Double?,
+        weight: Double?,
         memo: String?,
     ) {
         val profile = state.value.selected ?: return
@@ -245,7 +269,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     symptoms = symptoms.takeIf { it.isNotEmpty() }?.joinToString(","),
                     mood = mood?.takeIf { it.isNotBlank() },
                     temperature = temperature,
-                    weight = existing?.weight,
+                    weight = weight,
                     medication = existing?.medication,
                     memo = memo?.takeIf { it.isNotBlank() },
                 ),

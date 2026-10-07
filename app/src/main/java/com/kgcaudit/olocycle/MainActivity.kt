@@ -271,7 +271,8 @@ internal fun App(vm: HomeViewModel = viewModel()) {
                 onGoCalendar = { tab = Tab.CALENDAR },
                 onDayClick = { recordDate = it },
                 onSetPeriodStart = { d, on -> vm.setPeriodStart(d, on) },
-                onSaveRecord = { d, flow, sym, mood, temp, memo -> vm.saveDayRecord(d, flow, sym, mood, temp, memo) },
+                onSetPeriodEnd = { d, on -> vm.setPeriodEnd(d, on) },
+                onSaveRecord = { d, flow, sym, mood, temp, weight, memo -> vm.saveDayRecord(d, flow, sym, mood, temp, weight, memo) },
             )
         }
     }
@@ -301,11 +302,13 @@ internal fun App(vm: HomeViewModel = viewModel()) {
         DayRecordDialog(
             date = date,
             isPeriodStart = state.isPeriodStart(date),
+            isPeriodEnd = state.isRecordedPeriodEnd(date),
             existing = state.recordOf(date),
             onDismiss = { recordDate = null },
             onSetPeriodStart = { vm.setPeriodStart(date, it) },
-            onSave = { flow, symptoms, mood, temp, memo ->
-                vm.saveDayRecord(date, flow, symptoms, mood, temp, memo); recordDate = null
+            onSetPeriodEnd = { vm.setPeriodEnd(date, it) },
+            onSave = { flow, symptoms, mood, temp, weight, memo ->
+                vm.saveDayRecord(date, flow, symptoms, mood, temp, weight, memo); recordDate = null
             },
         )
     }

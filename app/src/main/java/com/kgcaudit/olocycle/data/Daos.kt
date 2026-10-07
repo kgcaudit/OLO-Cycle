@@ -47,6 +47,10 @@ interface PeriodStartDao {
     @Query("DELETE FROM period_starts WHERE profileId = :profileId AND startDate = :startDate")
     suspend fun deleteByDate(profileId: Long, startDate: java.time.LocalDate)
 
+    /** 생리 종료일 설정 같은 단발 수정을 위해 현재 구성원의 기록 시작일을 한 번 읽는다. */
+    @Query("SELECT * FROM period_starts WHERE profileId = :profileId ORDER BY startDate")
+    suspend fun listForProfile(profileId: Long): List<PeriodStart>
+
     @Query("SELECT * FROM period_starts")
     suspend fun getAll(): List<PeriodStart>
 

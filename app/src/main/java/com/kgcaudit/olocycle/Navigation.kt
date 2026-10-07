@@ -308,7 +308,8 @@ internal fun ScreenContent(
     onGoCalendar: () -> Unit,
     onDayClick: (LocalDate) -> Unit,
     onSetPeriodStart: (LocalDate, Boolean) -> Unit = { _, _ -> },
-    onSaveRecord: (LocalDate, Int?, List<String>, String?, Double?, String?) -> Unit = { _, _, _, _, _, _ -> },
+    onSetPeriodEnd: (LocalDate, Boolean) -> Unit = { _, _ -> },
+    onSaveRecord: (LocalDate, Int?, List<String>, String?, Double?, Double?, String?) -> Unit = { _, _, _, _, _, _, _ -> },
 ) {
     Box(
         modifier.pointerInput(state.profiles, state.selected?.id) {
@@ -327,7 +328,7 @@ internal fun ScreenContent(
             when (tab) {
                 Tab.HOME -> HomeDashboard(state, profileColor, expanded, onOpenCalendar = onGoCalendar)
                 Tab.CALENDAR -> CalendarTab(state, profileColor, visibleMonth, expanded, onSetMonth = onSetMonth,
-                    onDayClick = onDayClick, onSetPeriodStart = onSetPeriodStart, onSaveRecord = onSaveRecord)
+                    onDayClick = onDayClick, onSetPeriodStart = onSetPeriodStart, onSetPeriodEnd = onSetPeriodEnd, onSaveRecord = onSaveRecord)
                 Tab.ANALYSIS -> AnalysisTab(state, profileColor, expanded, onDayClick)
             }
         }

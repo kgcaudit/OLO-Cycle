@@ -283,20 +283,22 @@ internal val SYMPTOM_OPTIONS = listOf("복통", "두통", "허리통증", "부�
 internal val MOOD_OPTIONS = listOf("좋음", "평온", "예민", "우울", "불안")
 
 /** 그날 기록 편집 상태 — 다이얼로그(휴대폰)와 인라인 패널(태블릿)이 같은 입력을 공유하도록 홀더로 뺐다. */
-internal class DayRecordEditState(isPeriodStart: Boolean, existing: com.kgcaudit.olocycle.data.DayRecord?) {
+internal class DayRecordEditState(isPeriodStart: Boolean, isPeriodEnd: Boolean, existing: com.kgcaudit.olocycle.data.DayRecord?) {
     var periodStart by mutableStateOf(isPeriodStart)
+    var periodEnd by mutableStateOf(isPeriodEnd)
     var flow by mutableStateOf(existing?.flow)
     val symptoms = mutableStateListOf<String>().apply {
         existing?.symptoms?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.let { addAll(it) }
     }
     var mood by mutableStateOf(existing?.mood)
     var temperature by mutableStateOf(existing?.temperature?.toString() ?: "")
+    var weight by mutableStateOf(existing?.weight?.toString() ?: "")
     var memo by mutableStateOf(existing?.memo ?: "")
 }
 
 @Composable
-internal fun rememberDayRecordEditState(date: LocalDate, isPeriodStart: Boolean, existing: com.kgcaudit.olocycle.data.DayRecord?) =
-    remember(date, isPeriodStart, existing) { DayRecordEditState(isPeriodStart, existing) }
+internal fun rememberDayRecordEditState(date: LocalDate, isPeriodStart: Boolean, isPeriodEnd: Boolean, existing: com.kgcaudit.olocycle.data.DayRecord?) =
+    remember(date, isPeriodStart, isPeriodEnd, existing) { DayRecordEditState(isPeriodStart, isPeriodEnd, existing) }
 
 /** 그날 기록 입력 필드(생리 시작일·생리량·증상·기분·체온·메모). 다이얼로그와 인라인 패널 공용. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -317,6 +319,22 @@ internal fun DayRecordFields(st: DayRecordEditState) {
             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = OloColors.Primary),
         )
     }
+    Spacer(Modifier.height(8.dp))
+    // 생리 종료일 토글: 켜면 이 날을 생리 마지막 날로 기록해 실제 생리 기간(히스토리)에 반영한다.
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(OloColors.SurfaceSoft)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("생리 종료일", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = OloColors.Ink)
+            Text("켜면 이 날을 생리 마지막 날로 기록해요.", color = OloColors.Muted, fontSize = 11.sp)
+        }
+        Switch(
+            st.periodEnd, { st.periodEnd = it },
+            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = OloColors.Period),
+        )
+    }
 
     FieldLabel("생리량")
     FlowDropSelector(selected = st.flow) { st.flow = if (st.flow == it) null else it }
@@ -335,6 +353,9 @@ internal fun DayRecordFields(st: DayRecordEditState) {
     FieldLabel("기초체온 (℃)")
     OutlinedTextField(st.temperature, { st.temperature = it }, singleLine = true, placeholder = { Text("예: 36.6") },
         modifier = Modifier.fillMaxWidth(), colors = oloFieldColors())
+    FieldLabel("체중 (kg)")
+    OutlinedTextField(st.weight, { st.weight = it }, singleLine = true, placeholder = { Text("예: 55.2") },
+        modifier = Modifier.fillMaxWidth(), colors = oloFieldColors())
     FieldLabel("메모")
     OutlinedTextField(st.memo, { st.memo = it }, modifier = Modifier.fillMaxWidth(), minLines = 3,
         placeholder = { Text("자유롭게 남겨요") }, colors = oloFieldColors())
@@ -344,19 +365,22 @@ internal fun DayRecordFields(st: DayRecordEditState) {
 internal fun DayRecordDialog(
     date: LocalDate,
     isPeriodStart: Boolean,
+    isPeriodEnd: Boolean,
     existing: com.kgcaudit.olocycle.data.DayRecord?,
     onDismiss: () -> Unit,
     onSetPeriodStart: (Boolean) -> Unit,
-    onSave: (flow: Int?, symptoms: List<String>, mood: String?, temperature: Double?, memo: String?) -> Unit,
+    onSetPeriodEnd: (Boolean) -> Unit,
+    onSave: (flow: Int?, symptoms: List<String>, mood: String?, temperature: Double?, weight: Double?, memo: String?) -> Unit,
 ) {
-    val st = rememberDayRecordEditState(date, isPeriodStart, existing)
+    val st = rememberDayRecordEditState(date, isPeriodStart, isPeriodEnd, existing)
     OloDialog(
         title = "${date.monthValue}월 ${date.dayOfMonth}일 기록",
         onDismiss = onDismiss,
         confirmLabel = "저장",
         onConfirm = {
             onSetPeriodStart(st.periodStart)
-            onSave(st.flow, st.symptoms.toList(), st.mood, st.temperature.toDoubleOrNull(), st.memo)
+            onSetPeriodEnd(st.periodEnd)
+            onSave(st.flow, st.symptoms.toList(), st.mood, st.temperature.toDoubleOrNull(), st.weight.toDoubleOrNull(), st.memo)
         },
     ) {
         DayRecordFields(st)
@@ -373,8 +397,9 @@ internal fun DayDetailPanel(
     modifier: Modifier,
     date: LocalDate?,
     isPeriodStart: Boolean,
+    isPeriodEnd: Boolean,
     existing: com.kgcaudit.olocycle.data.DayRecord?,
-    onSave: (LocalDate, Boolean, Int?, List<String>, String?, Double?, String?) -> Unit,
+    onSave: (LocalDate, Boolean, Boolean, Int?, List<String>, String?, Double?, Double?, String?) -> Unit,
 ) {
     Column(
         modifier.clip(RoundedCornerShape(16.dp)).border(1.dp, OloColors.Line, RoundedCornerShape(16.dp)).background(OloColors.Surface),
@@ -386,12 +411,12 @@ internal fun DayDetailPanel(
             }
             return
         }
-        val st = rememberDayRecordEditState(date, isPeriodStart, existing)
+        val st = rememberDayRecordEditState(date, isPeriodStart, isPeriodEnd, existing)
         Row(Modifier.fillMaxWidth().padding(16.dp, 14.dp, 12.dp, 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("${date.monthValue}월 ${date.dayOfMonth}일 기록", Modifier.weight(1f),
                 color = OloColors.Ink, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
             Button(
-                onClick = { onSave(date, st.periodStart, st.flow, st.symptoms.toList(), st.mood, st.temperature.toDoubleOrNull(), st.memo) },
+                onClick = { onSave(date, st.periodStart, st.periodEnd, st.flow, st.symptoms.toList(), st.mood, st.temperature.toDoubleOrNull(), st.weight.toDoubleOrNull(), st.memo) },
                 colors = ButtonDefaults.buttonColors(containerColor = OloColors.Primary),
                 shape = OloButtonShape,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
