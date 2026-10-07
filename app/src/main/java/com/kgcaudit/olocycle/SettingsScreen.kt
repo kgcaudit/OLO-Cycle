@@ -336,20 +336,3 @@ internal fun SettingsIconRow(
         trailing()
     }
 }
-
-// ---------------------------------------------------------------------------- shared bits
-
-@Composable
-internal fun SectionTitle(title: String, subtitle: String) {
-    Column(Modifier.fillMaxWidth().padding(20.dp, 16.dp, 20.dp, 8.dp)) {
-        Text(title, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, color = OloColors.Ink)
-        if (subtitle.isNotBlank()) Text(subtitle, color = OloColors.Muted, fontSize = 13.sp)
-    }
-}
-
-/** 화면명을 상단 헤더가 이미 보여 주는 화면(분석)에서, 본문 큰 제목 없이 부제 한 줄만 둔다. */
-@Composable
-internal fun AnalysisSubtitle(subtitle: String) {
-    Text(subtitle, color = OloColors.Muted, fontSize = 13.sp,
-        modifier = Modifier.fillMaxWidth().padding(20.dp, 16.dp, 20.dp, 8.dp))
-}
