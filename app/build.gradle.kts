@@ -13,8 +13,8 @@ android {
         applicationId = "com.kgcaudit.olocycle"
         minSdk = 24
         targetSdk = 35
-        versionCode = 51
-        versionName = "0.42.0"
+        versionCode = 52
+        versionName = "0.43.0"
     }
 
     buildTypes {
@@ -45,31 +45,31 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    implementation(platform("androidx.compose:compose-bom:2025.01.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.biometric:biometric:1.1.0")
-    implementation("androidx.fragment:fragment-ktx:1.8.5")
+    implementation("androidx.fragment:fragment-ktx:1.8.9")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     testImplementation("junit:junit:4.13.2")
 
     // 구상안/대조 스크린샷 렌더(로컬 워크플로우). 실제 앱 부품을 그대로 그려 PNG로 저장한다.
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core-ktx:1.6.1")
-    testImplementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    testImplementation(platform("androidx.compose:compose-bom:2025.01.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
-    debugImplementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    debugImplementation(platform("androidx.compose:compose-bom:2025.01.00"))
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
